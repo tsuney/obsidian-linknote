@@ -1,0 +1,102 @@
+/* Linknote — floating button */
+.lkn-float-btn {
+  position: fixed;
+  z-index: var(--layer-popover, 30);
+  padding: 3px 10px;
+  font-size: var(--font-ui-smaller);
+  line-height: 1.4;
+  border-radius: var(--radius-m);
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  box-shadow: var(--shadow-s);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.lkn-float-btn:hover {
+  background-color: var(--interactive-accent-hover);
+}
+
+body.is-mobile .lkn-float-btn {
+  padding: 6px 14px;
+  font-size: var(--font-ui-small);
+}
+
+/* Linknote — composer modal */
+.lkn-modal {
+  max-width: 620px;
+}
+
+.lkn-modal .lkn-quote {
+  margin: 0 0 12px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--interactive-accent);
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  max-height: 6.5em;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.lkn-modal .lkn-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.lkn-modal input.lkn-title {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.lkn-modal textarea.lkn-body {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  font-family: var(--font-text);
+  line-height: 1.5;
+}
+
+.lkn-modal .lkn-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.lkn-modal .lkn-hint {
+  flex: 1;
+  align-self: center;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+/* Linknote — settings */
+textarea.lkn-template {
+  width: 100%;
+  min-height: 260px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.lkn-varhelp {
+  margin: 0 0 18px 0;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.lkn-varhelp summary {
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.lkn-varhelp ul {
+  margin: 8px 0 0 0;
+  padding-left: 1.4em;
+}
