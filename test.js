@@ -18,6 +18,8 @@ const {
   existingBlockId,
   sanitizeFileName,
   formatDate,
+  narrowToListItem,
+  findBlockContaining,
   renderTemplate,
   tidy,
   DEFAULT_NOTE_TEMPLATE,
@@ -48,7 +50,9 @@ eq('trailing whitespace is normalised', buildAnchoredBlock('A sentence.   ', LIN
 console.log('\nanchoring — existing block IDs');
 eq('reads an existing ID', existingBlockId('A sentence. ^zzz999'), 'zzz999');
 eq('null when there is none', existingBlockId('A sentence.'), null);
-eq('keeps the existing ID last', buildAnchoredBlock('A sentence. ^zzz999', LINK, ''), 'A sentence. ' + LINK);
+eq('an existing ID survives and stays last', buildAnchoredBlock('A sentence. ^zzz999', LINK, ''), 'A sentence. ' + LINK + ' ^zzz999');
+eq('an existing ID is not duplicated when one is supplied', buildAnchoredBlock('A sentence. ^zzz999', LINK, 'zzz999'), 'A sentence. ' + LINK + ' ^zzz999');
+eq('nothing to add leaves an ID-bearing line untouched', buildAnchoredBlock('A sentence. ^zzz999', '', ''), 'A sentence. ^zzz999');
 
 console.log('\nanchoring — lists');
 eq('list item', buildAnchoredBlock('- an item', LINK, 'ab12cd'), '- an item ' + LINK + ' ^ab12cd');
@@ -67,6 +71,28 @@ console.log('\nanchoring — options');
 eq('block ID only', buildAnchoredBlock('A sentence.', '', 'ab12cd'), 'A sentence. ^ab12cd');
 eq('link only', buildAnchoredBlock('A sentence.', LINK, ''), 'A sentence. ' + LINK);
 eq('neither leaves the block untouched', buildAnchoredBlock('A sentence.', '', ''), 'A sentence.');
+
+console.log('\nnarrowing a list block to the selected item');
+const LIST = '- first item\n- second item\n- third item';
+eq('picks the selected bullet', narrowToListItem(LIST, 'second item'), '- second item');
+eq('picks the first', narrowToListItem(LIST, 'first item'), '- first item');
+eq('picks the last', narrowToListItem(LIST, 'third item'), '- third item');
+const TASKS = '- [ ] wire up the button\n- [x] read the settings\n- [ ] ship it';
+eq('picks the selected task', narrowToListItem(TASKS, 'read the settings'), '- [x] read the settings');
+eq('a numbered item', narrowToListItem('1. alpha\n2. beta', 'beta'), '2. beta');
+eq('a nested item', narrowToListItem('- parent\n  - child one\n  - child two', 'child two'), '  - child two');
+eq('ambiguous selection leaves the block alone', narrowToListItem('- same\n- same', 'same'), '- same\n- same');
+eq('no match leaves the block alone', narrowToListItem(LIST, 'nowhere'), LIST);
+eq('a single-line block is untouched', narrowToListItem('- only one', 'only one'), '- only one');
+eq('a paragraph is untouched', narrowToListItem('line one\nline two', 'line two'), 'line one\nline two');
+
+console.log('\nlocating a block by its text');
+{
+  const doc = '# Title\n\nAlpha paragraph.\n\nBeta paragraph.\n';
+  eq('unique match returns the containing block', findBlockContaining(doc, 'Beta'), 'Beta paragraph.');
+  eq('missing text returns empty', findBlockContaining(doc, 'Gamma'), '');
+  eq('duplicate text returns empty', findBlockContaining('Same.\n\nSame.\n', 'Same.'), '');
+}
 
 console.log('\nfile names');
 eq('illegal characters are dropped', sanitizeFileName('A/B:C*D?E"F<G>H|I#J^K[L]M'), 'ABCDEFGHIJKLM');

@@ -109,6 +109,7 @@ Anchors are placed at block granularity, matching Obsidian's own block reference
 - Reading view only. Live Preview is already editable, so there is nothing to solve there.
 - Anchors are per block. Selecting one sentence inside a long paragraph anchors the paragraph. Keep `{{selection}}` in your template if you want the exact wording recorded.
 - Inside a callout or a blockquote, the anchor attaches to that line rather than to the callout as a whole.
+- In a list, the anchor attaches to the selected item. If two items have exactly the same text, Linknote stops rather than guessing.
 - If two blocks in a note have exactly the same text, Linknote stops instead of picking one.
 - There is no command to remove a linknote yet. Delete the note and remove the ` [[…]]` and ` ^id` from the source by hand.
 
@@ -119,6 +120,31 @@ Linknote works in popped-out windows. Listeners are registered per window, and t
 ## Contributing
 
 Issues and pull requests are welcome. The plugin is plain JavaScript with no build step: edit `main.js` and reload Obsidian.
+
+Two test suites run on plain Node, with no dependencies:
+
+```bash
+node test.js              # pure helpers: anchoring, dates, template rendering
+node test/integration.js  # note creation end to end, against a fake vault
+```
+
+## Changelog
+
+### 0.6.2
+
+- Fixed: the source position was resolved when you pressed Save, so a re-render while the composer was open — triggered by focus changes, by another plugin redrawing task lines, or by an external edit to the file — made it fail with "the position in the source could not be determined". The position is now captured the moment you select, with two fallbacks behind it.
+- Fixed: in a list with several items, the anchor landed on the last item instead of the one you selected. Obsidian reports a whole list as a single block; Linknote now narrows it to the selected line. Task lines are covered by the same fix.
+- Identical list items abort instead of anchoring the wrong one.
+
+### 0.6.1
+
+- Fixed: adding a linknote to a block that already had a block ID removed that ID, breaking any existing block references to it. The ID is now preserved.
+
+### 0.6.0
+
+- Linknotes and filenames are built from templates you control, frontmatter included.
+- The interface is in English.
+- Groundwork for mobile: touch selection, button placement, no autofocus fighting the keyboard.
 
 ## License
 

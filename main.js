@@ -178,16 +178,62 @@ function buildAnchoredBlock(blockSrc, link, blockId) {
   const isTable = /^\s*\|/.test(lastLine);
   const needsOwnLine = isHeading || isCodeFence || isMathBlock || isTable;
 
-  const tail = [link, blockId ? '^' + blockId : ''].filter(Boolean).join(' ');
-  if (!tail) return blockSrc;
-
   if (needsOwnLine) {
+    const tail = [link, blockId ? '^' + blockId : ''].filter(Boolean).join(' ');
+    if (!tail) return blockSrc;
     return blockSrc.replace(/\s*$/, '') + '\n\n' + tail;
   }
+
+  // A block ID already on this line must survive: other notes may reference it.
+  const found = lastLine.match(BLOCK_ID_RE);
+  const keepId = blockId || (found ? found[1] : '');
+  const tail = [link, keepId ? '^' + keepId : ''].filter(Boolean).join(' ');
+  if (!tail) return blockSrc;
 
   const base = lastLine.replace(BLOCK_ID_RE, '');
   lines[last] = base.replace(/\s+$/, '') + ' ' + tail;
   return lines.join('\n');
+}
+
+const LIST_MARKER_RE = /^\s*(?:[-*+]|\d+[.)])\s/;
+
+/**
+ * getSectionInfo() treats a whole list — bullets, numbers, task lines — as one
+ * block, so anchoring it verbatim would land on the last item rather than the
+ * one that was selected. When exactly one list line contains the selection,
+ * narrow the block down to that line.
+ */
+function narrowToListItem(blockSrc, selection) {
+  const lines = blockSrc.split('\n');
+  if (lines.length < 2) return blockSrc;
+
+  const matches = listItemMatches(blockSrc, selection);
+  return matches.length === 1 ? matches[0] : blockSrc;
+}
+
+/** List lines within a block that contain the selection. */
+function listItemMatches(blockSrc, selection) {
+  const needle = String(selection || '').split('\n')[0].trim();
+  if (!needle) return [];
+  return blockSrc.split('\n').filter((l) => LIST_MARKER_RE.test(l) && l.indexOf(needle) !== -1);
+}
+
+/**
+ * Last-resort locator: find the block containing an exact, unique occurrence
+ * of the selected text, delimited by blank lines. Returns '' when the text is
+ * missing or appears more than once.
+ */
+function findBlockContaining(content, needle) {
+  if (!needle) return '';
+  const first = content.indexOf(needle);
+  if (first === -1) return '';
+  if (content.indexOf(needle, first + needle.length) !== -1) return '';
+
+  let start = content.lastIndexOf('\n\n', first);
+  start = start === -1 ? 0 : start + 2;
+  let end = content.indexOf('\n\n', first + needle.length);
+  end = end === -1 ? content.length : end;
+  return content.slice(start, end).replace(/\s+$/, '');
 }
 
 /** Reads an existing block ID off the end of a block, or null. */
@@ -366,9 +412,26 @@ class LinknotePlugin extends Plugin {
       doc: targetDoc,
       sourcePath: ctx.sourcePath,
       rect: range.getBoundingClientRect(),
+      // Grab the source of the block right now. Reading view re-renders on
+      // focus changes and on external file edits, and a recycled element
+      // makes getSectionInfo() return null. Since the write-back locates the
+      // block by matching this text rather than by line number, capturing it
+      // early costs nothing and survives a re-render.
+      blockSrc: this.readBlockSource(ctx, ctxEl),
     };
     this.snapshot = snap;
     return snap;
+  }
+
+  /** Source text of the block behind a rendered element, or '' if unavailable. */
+  readBlockSource(ctx, ctxEl) {
+    try {
+      const info = ctx.getSectionInfo(ctxEl);
+      if (!info || typeof info.text !== 'string') return '';
+      return info.text.split('\n').slice(info.lineStart, info.lineEnd + 1).join('\n');
+    } catch (e) {
+      return '';
+    }
   }
 
   /* ------------------------------------------------------- floating button */
@@ -453,17 +516,25 @@ class LinknotePlugin extends Plugin {
       throw new Error('the source note could not be resolved');
     }
 
-    // Ask for the position now, not from the stale snapshot.
-    const info = snap.ctx.getSectionInfo(snap.ctxEl);
-    if (!info || typeof info.text !== 'string') {
-      throw new Error('the position in the source could not be determined; reopen the note and retry');
+    const currentContent = await app.vault.read(sourceFile);
+
+    // Prefer the block captured when the selection was made. Fall back to
+    // asking again (the element may still be live), then to locating the
+    // selected text directly in the file.
+    let blockSrc = snap.blockSrc || '';
+    if (!blockSrc) blockSrc = this.readBlockSource(snap.ctx, snap.ctxEl);
+    if (!blockSrc) blockSrc = findBlockContaining(currentContent, snap.text);
+    // Several identical list items would otherwise anchor the last one.
+    if (blockSrc.split('\n').length > 1 && listItemMatches(blockSrc, snap.text).length > 1) {
+      throw new Error('several list items share this exact text, so the position is ambiguous');
+    }
+    blockSrc = narrowToListItem(blockSrc, snap.text);
+    if (!blockSrc.trim()) {
+      throw new Error(
+        'the position in the source could not be determined; scroll the passage back into view, reselect it and retry'
+      );
     }
 
-    const infoLines = info.text.split('\n');
-    const blockSrc = infoLines.slice(info.lineStart, info.lineEnd + 1).join('\n');
-    if (!blockSrc.trim()) throw new Error('the selected block is empty');
-
-    const currentContent = await app.vault.read(sourceFile);
     const firstAt = currentContent.indexOf(blockSrc);
     if (firstAt === -1) {
       throw new Error('the source note has changed; refresh the view and retry');
@@ -808,6 +879,9 @@ module.exports = LinknotePlugin;
 
 // Exported for tests. Unused at runtime.
 module.exports.buildAnchoredBlock = buildAnchoredBlock;
+module.exports.narrowToListItem = narrowToListItem;
+module.exports.listItemMatches = listItemMatches;
+module.exports.findBlockContaining = findBlockContaining;
 module.exports.existingBlockId = existingBlockId;
 module.exports.sanitizeFileName = sanitizeFileName;
 module.exports.formatDate = formatDate;
