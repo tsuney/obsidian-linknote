@@ -19,6 +19,7 @@ const {
   sanitizeFileName,
   formatDate,
   narrowToListItem,
+  normalizeInline,
   findBlockContaining,
   renderTemplate,
   tidy,
@@ -86,12 +87,36 @@ eq('no match leaves the block alone', narrowToListItem(LIST, 'nowhere'), LIST);
 eq('a single-line block is untouched', narrowToListItem('- only one', 'only one'), '- only one');
 eq('a paragraph is untouched', narrowToListItem('line one\nline two', 'line two'), 'line one\nline two');
 
+console.log('\nnormalising inline markup before matching');
+eq('inline code', normalizeInline('`Annotations/` に `補足.md` が作られる'), 'Annotations/ に 補足.md が作られる');
+eq('bold and italics', normalizeInline('**bold** and ~~struck~~ and ==marked=='), 'bold and struck and marked');
+eq('wikilink with alias', normalizeInline('see [[Some Note|the note]] please'), 'see the note please');
+eq('plain wikilink', normalizeInline('see [[Some Note]] please'), 'see Some Note please');
+eq('markdown link', normalizeInline('see [the docs](https://example.com) please'), 'see the docs please');
+eq('embed is dropped', normalizeInline('![[Some Note#^abc123]] tail'), 'tail');
+eq('task marker is dropped', normalizeInline('- [ ] do the thing'), 'do the thing');
+eq('checked task marker is dropped', normalizeInline('- [x] done already'), 'done already');
+eq('bullet marker is dropped', normalizeInline('- a bullet'), 'a bullet');
+eq('numbered marker is dropped', normalizeInline('2. second'), 'second');
+
+console.log('\nthe line that failed in the field');
+{
+  const line = '- [ ] `Annotations/` に `補足 …… 2026-08-12-Wednesday.md` が作られる';
+  const rendered = 'Annotations/ に 補足 …… 2026-08-12-Wednesday.md が作られる';
+  const block = '- [ ] 段落をドラッグで選ぶと、選択の下に「† Linknote」が出る\n' + line + '\n- [ ] `Esc` で小窓を閉じると、何も作られない';
+  eq('the code-span line is now matched', narrowToListItem(block, rendered), line);
+}
+
 console.log('\nlocating a block by its text');
 {
   const doc = '# Title\n\nAlpha paragraph.\n\nBeta paragraph.\n';
   eq('unique match returns the containing block', findBlockContaining(doc, 'Beta'), 'Beta paragraph.');
   eq('missing text returns empty', findBlockContaining(doc, 'Gamma'), '');
   eq('duplicate text returns empty', findBlockContaining('Same.\n\nSame.\n', 'Same.'), '');
+  const marked = '# Title\n\nA **bold** claim here.\n\nSomething else.\n';
+  eq('falls back to a normalised line match', findBlockContaining(marked, 'A bold claim here.'), 'A **bold** claim here.');
+  const listDoc = '- [ ] first `thing`\n- [ ] second `thing`\n';
+  eq('a matched list line is returned on its own', findBlockContaining(listDoc, 'second thing'), '- [ ] second `thing`');
 }
 
 console.log('\nfile names');

@@ -337,6 +337,41 @@ async function main() {
     eq('the source was not modified', app._store.get(src), '- [ ] same task\n- [ ] same task\n');
   }
 
+  console.log('\n13. a task line containing inline code');
+  {
+    const src = 'Checklist.md';
+    const line = '- [ ] `Annotations/` に `補足 …… 2026-08-12-Wednesday.md` が作られる';
+    const list = '- [ ] 段落をドラッグで選ぶと、選択の下に「† Linknote」が出る\n' + line + '\n- [ ] `Esc` で小窓を閉じると、何も作られない';
+    const app = makeApp({ [src]: '# Checklist\n\n' + list + '\n' });
+    const p = makePlugin(app, null);
+    await p.loadSettings();
+    // Reading view strips the backticks from the selection.
+    const rendered = 'Annotations/ に 補足 …… 2026-08-12-Wednesday.md が作られる';
+    const snap = makeSnapshot(app, src, rendered, 2, 4);
+    const file = await p.createLinknote(snap, { title: '保存先の確認', body: 'b' });
+    const source = app._store.get(src);
+    const id = source.match(/\^([a-z0-9]{6})/)[1];
+    eq('the anchor lands on the code-span task', source,
+      '# Checklist\n\n- [ ] 段落をドラッグで選ぶと、選択の下に「† Linknote」が出る\n' +
+      line + ' [[保存先の確認|†]] ^' + id + '\n' +
+      '- [ ] `Esc` で小窓を閉じると、何も作られない\n');
+    check('the linknote was created', !!app._store.get(file.path));
+  }
+
+  console.log('\n14. rendered text with bold, and a dead render context');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: '# Doc\n\nThe **quarterly** close is fixed.\n' });
+    const p = makePlugin(app, null);
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'The quarterly close is fixed.', 2, 2, { stale: true, noBlockSrc: true });
+    await p.createLinknote(snap, { title: 'Bold fallback', body: 'b' });
+    const source = app._store.get(src);
+    const id = source.match(/\^([a-z0-9]{6})/)[1];
+    eq('the normalised fallback found the paragraph', source,
+      '# Doc\n\nThe **quarterly** close is fixed. [[Bold fallback|†]] ^' + id + '\n');
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

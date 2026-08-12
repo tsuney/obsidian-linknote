@@ -198,6 +198,26 @@ function buildAnchoredBlock(blockSrc, link, blockId) {
 const LIST_MARKER_RE = /^\s*(?:[-*+]|\d+[.)])\s/;
 
 /**
+ * Reading view hands back rendered text, which has lost its inline markup:
+ * `code`, **bold**, [[wikilinks]] and [text](links) all read differently in
+ * the source. Reduce both sides to a comparable form before matching. The
+ * result is only ever used for comparison, never written back.
+ */
+function normalizeInline(text) {
+  return String(text)
+    .replace(/!\[\[[^\]]*\]\]/g, '')
+    .replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, '$1')
+    .replace(/\[\[([^\]]*)\]\]/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX\-\/]\]\s*)?/, '')
+    .replace(/`+/g, '')
+    .replace(/(\*\*|__|~~|==)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * getSectionInfo() treats a whole list — bullets, numbers, task lines — as one
  * block, so anchoring it verbatim would land on the last item rather than the
  * one that was selected. When exactly one list line contains the selection,
@@ -213,9 +233,13 @@ function narrowToListItem(blockSrc, selection) {
 
 /** List lines within a block that contain the selection. */
 function listItemMatches(blockSrc, selection) {
-  const needle = String(selection || '').split('\n')[0].trim();
+  const raw = String(selection || '').split('\n')[0].trim();
+  if (!raw) return [];
+  const needle = normalizeInline(raw);
   if (!needle) return [];
-  return blockSrc.split('\n').filter((l) => LIST_MARKER_RE.test(l) && l.indexOf(needle) !== -1);
+  return blockSrc
+    .split('\n')
+    .filter((l) => LIST_MARKER_RE.test(l) && normalizeInline(l).indexOf(needle) !== -1);
 }
 
 /**
@@ -225,13 +249,37 @@ function listItemMatches(blockSrc, selection) {
  */
 function findBlockContaining(content, needle) {
   if (!needle) return '';
-  const first = content.indexOf(needle);
-  if (first === -1) return '';
-  if (content.indexOf(needle, first + needle.length) !== -1) return '';
 
-  let start = content.lastIndexOf('\n\n', first);
+  const first = content.indexOf(needle);
+  if (first !== -1 && content.indexOf(needle, first + needle.length) === -1) {
+    return blockAround(content, first, needle.length);
+  }
+
+  // The selection came from rendered text, so inline markup will not match
+  // verbatim. Fall back to a normalised, line-by-line search.
+  const target = normalizeInline(String(needle).split('\n')[0]);
+  if (!target) return '';
+
+  const lines = content.split('\n');
+  let hit = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() && normalizeInline(lines[i]).indexOf(target) !== -1) {
+      if (hit !== -1) return '';
+      hit = i;
+    }
+  }
+  if (hit === -1) return '';
+  if (LIST_MARKER_RE.test(lines[hit])) return lines[hit];
+
+  const offset = lines.slice(0, hit).join('\n').length + (hit ? 1 : 0);
+  return blockAround(content, offset, lines[hit].length);
+}
+
+/** Expands an offset range out to its blank-line-delimited block. */
+function blockAround(content, at, len) {
+  let start = content.lastIndexOf('\n\n', at);
   start = start === -1 ? 0 : start + 2;
-  let end = content.indexOf('\n\n', first + needle.length);
+  let end = content.indexOf('\n\n', at + len);
   end = end === -1 ? content.length : end;
   return content.slice(start, end).replace(/\s+$/, '');
 }
@@ -881,6 +929,7 @@ module.exports = LinknotePlugin;
 module.exports.buildAnchoredBlock = buildAnchoredBlock;
 module.exports.narrowToListItem = narrowToListItem;
 module.exports.listItemMatches = listItemMatches;
+module.exports.normalizeInline = normalizeInline;
 module.exports.findBlockContaining = findBlockContaining;
 module.exports.existingBlockId = existingBlockId;
 module.exports.sanitizeFileName = sanitizeFileName;
