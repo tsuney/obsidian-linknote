@@ -151,40 +151,57 @@ async function main() {
     check('the other paragraph was left alone', source.includes('\nExpenses are filed weekly.\n'));
   }
 
-  console.log('\n2. legacy settings migrated from a pre-0.6.0 install');
+  console.log('\n2. a user-supplied template, in any language');
   {
-    const src = '運用ルール.md';
-    const app = makeApp({ [src]: '# 運用ルール\n\n四半期の締めは翌月 10 営業日目とします。\n' });
-    // What a 0.5.0 data.json looked like.
+    const src = 'Notes.md';
+    const app = makeApp({ [src]: '# Notes\n\nThe close is the tenth business day.\n' });
+    // Any layout the user pastes into the setting, here a multi-section one.
+    const template = [
+      '---',
+      'type: linknote',
+      'tags:',
+      '  - linknote',
+      'created: {{date}}',
+      'author:',
+      '  - {{author}}',
+      'source: "{{source}}"',
+      '---',
+      '',
+      '# Note on {{sourceName}}: {{title}}',
+      '',
+      '## 1. Context',
+      '',
+      '{{embed}}',
+      '',
+      '> [!quote] Selected text',
+      '{{selectionQuote}}',
+      '',
+      '## 2. Note',
+      '',
+      '{{body}}',
+      '',
+    ].join('\n');
     const p = makePlugin(app, {
-      folder: 'Annotations',
-      filenamePrefix: '補足',
-      noteTag: '補足メモ',
-      marker: '†',
-      author: 'Tsuneyama',
-      useBlockId: true,
-      useInlineLink: true,
+      folder: 'Refs',
+      filenameTemplate: 'ref {{title}} {{date}}',
+      dateFormat: 'YYYY-MM-DD-dddd',
+      author: 'A. Reader',
+      noteTemplate: template,
     });
     await p.loadSettings();
 
-    eq('filenamePrefix became a filename template', p.settings.filenameTemplate, '補足 {{title}} {{date}}');
-    eq('date format switched to the vault convention', p.settings.dateFormat, 'YYYY-MM-DD-dddd');
-    check('the legacy note template was installed', p.settings.noteTemplate.includes('## 1. 対象箇所[^1]'));
-    check('the old tag was carried into the template', p.settings.noteTemplate.includes('  - 補足メモ'));
-    check('no placeholder leaked into the template', !p.settings.noteTemplate.includes('__TAG__'));
-    check('obsolete keys were dropped', p.settings.filenamePrefix === undefined && p.settings.noteTag === undefined);
-
-    const snap = makeSnapshot(app, src, '四半期の締めは翌月 10 営業日目とします。', 2, 2);
-    const file = await p.createLinknote(snap, { title: '締め日の根拠', body: '経理と確認済み。' });
+    const snap = makeSnapshot(app, src, 'The close is the tenth business day.', 2, 2);
+    const file = await p.createLinknote(snap, { title: 'why the tenth', body: 'Confirmed.' });
     const note = app._store.get(file.path);
 
-    check('filename keeps the old shape', /^Annotations\/補足 締め日の根拠 \d{4}-\d{2}-\d{2}-[A-Za-z]+\.md$/.test(file.path), '    got: ' + file.path);
-    check('frontmatter keeps type', note.startsWith('---\ntype: 補足メモ\n'));
-    check('author is still a YAML list', note.includes('author:\n  - Tsuneyama\n'));
-    check('the quote callout is intact', note.includes('> [!quote] 選択した文\n> 四半期の締めは翌月 10 営業日目とします。'));
-    check('the four sections are present',
-      note.includes('## 1. 対象箇所[^1]') && note.includes('## 2. 補足') && note.includes('## 3. 出典') && note.includes('## 4. 変更履歴'));
-    check('the footnote carries the block ID', /\[\^1\]: \[\[運用ルール\]\]（ブロック ID `\^[a-z0-9]{6}`）/.test(note));
+    check('the filename template is honoured',
+      /^Refs\/ref why the tenth \d{4}-\d{2}-\d{2}-[A-Za-z]+\.md$/.test(file.path), '    got: ' + file.path);
+    check('frontmatter comes from the template', note.startsWith('---\ntype: linknote\n'));
+    check('author is rendered as a YAML list', note.includes('author:\n  - A. Reader\n'));
+    check('the heading mixes variables', note.includes('# Note on Notes: why the tenth'));
+    check('the quote callout is filled',
+      note.includes('> [!quote] Selected text\n> The close is the tenth business day.'));
+    check('the body landed in its section', note.includes('## 2. Note\n\nConfirmed.'));
   }
 
   console.log('\n3. heading gets its anchor on the following line');

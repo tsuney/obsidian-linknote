@@ -41,44 +41,68 @@ source: "{{source}}"
 {{body}}
 `;
 
-/**
- * Reproduces the pre-0.6.0 hard-coded layout. Applied automatically when
- * upgrading an existing install so output does not change under the user.
- */
-const LEGACY_NOTE_TEMPLATE = `---
-type: 補足メモ
+const QUOTED_NOTE_TEMPLATE = `---
+created: {{date}}
+source: "{{source}}"
+---
+
+# {{title}}
+
+{{embed}}
+
+> [!quote] Selected text
+{{selectionQuote}}
+
+{{body}}
+`;
+
+const DETAILED_NOTE_TEMPLATE = `---
+type: linknote
 summary: "{{summary}}"
 tags:
-  - __TAG__
+  - linknote
 created: {{date}}
 author:
   - {{author}}
 source: "{{source}}"
 ---
 
-# 補足：{{title}}
+# {{title}}
 
-## 1. 対象箇所[^1]
+## 1. Context
 
 {{embed}}
 
-> [!quote] 選択した文
+> [!quote] Selected text
 {{selectionQuote}}
 
-## 2. 補足
+## 2. Note
 
 {{body}}
 
-## 3. 出典
+## 3. Source
 
-[^1]: {{source}}（ブロック ID \`^{{blockId}}\`） の該当箇所。{{date}} 時点の記述に対する補足です。
-
-## 4. 変更履歴
-
-| 日付 | 変更内容 | 担当 |
-| --- | --- | --- |
-| {{date}} | 初版作成。Reading view で選択した箇所に対する補足メモ。 | {{author}} |
+{{source}}, block \`^{{blockId}}\`, as of {{date}}.
 `;
+
+/**
+ * Starting points offered in the settings tab. They are deliberately plain:
+ * pick the closest one and rewrite it in whatever language you write in.
+ */
+const TEMPLATE_PRESETS = [
+  {
+    name: 'Minimal — source embed and your note',
+    template: DEFAULT_NOTE_TEMPLATE,
+  },
+  {
+    name: 'With the quoted selection',
+    template: QUOTED_NOTE_TEMPLATE,
+  },
+  {
+    name: 'Detailed — properties, sections, source line',
+    template: DETAILED_NOTE_TEMPLATE,
+  },
+];
 
 const DEFAULT_SETTINGS = {
   folder: 'Linknotes',
@@ -345,22 +369,7 @@ class LinknotePlugin extends Plugin {
   /* ------------------------------------------------------------- settings */
 
   async loadSettings() {
-    const data = (await this.loadData()) || {};
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
-
-    // Migrate installs from before 0.6.0, when the layout was hard-coded.
-    if (data.filenamePrefix && !data.filenameTemplate) {
-      this.settings.filenameTemplate = data.filenamePrefix + ' {{title}} {{date}}';
-      this.settings.dateFormat = 'YYYY-MM-DD-dddd';
-    }
-    if (data.noteTag !== undefined && !data.noteTemplate) {
-      this.settings.noteTemplate = LEGACY_NOTE_TEMPLATE.replace('__TAG__', data.noteTag || 'linknote');
-    }
-    if (this.settings.noteTemplate.indexOf('__TAG__') !== -1) {
-      this.settings.noteTemplate = this.settings.noteTemplate.replace('__TAG__', 'linknote');
-    }
-    delete this.settings.filenamePrefix;
-    delete this.settings.noteTag;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) || {});
   }
 
   async saveSettings() {
@@ -858,6 +867,26 @@ class LinknoteSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName('Load a preset')
+      .setDesc('Replaces the note template above. Presets are starting points — rewrite them in whatever language you write in.')
+      .addDropdown((d) => {
+        TEMPLATE_PRESETS.forEach((preset, i) => d.addOption(String(i), preset.name));
+        d.setValue(String(this.presetIndex || 0));
+        d.onChange((v) => {
+          this.presetIndex = Number(v);
+        });
+      })
+      .addButton((b) =>
+        b.setButtonText('Load').onClick(async () => {
+          const preset = TEMPLATE_PRESETS[this.presetIndex || 0];
+          s.noteTemplate = preset.template;
+          await this.plugin.saveSettings();
+          this.display();
+          new Notice('Note template replaced with: ' + preset.name);
+        })
+      );
+
     const help = containerEl.createEl('details', { cls: 'lkn-varhelp' });
     help.createEl('summary', { text: 'Template variables' });
     const list = help.createEl('ul');
@@ -937,4 +966,4 @@ module.exports.formatDate = formatDate;
 module.exports.renderTemplate = renderTemplate;
 module.exports.tidy = tidy;
 module.exports.DEFAULT_NOTE_TEMPLATE = DEFAULT_NOTE_TEMPLATE;
-module.exports.LEGACY_NOTE_TEMPLATE = LEGACY_NOTE_TEMPLATE;
+module.exports.TEMPLATE_PRESETS = TEMPLATE_PRESETS;

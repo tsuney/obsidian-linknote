@@ -24,21 +24,24 @@ const {
   renderTemplate,
   tidy,
   DEFAULT_NOTE_TEMPLATE,
+  TEMPLATE_PRESETS,
 } = m;
 
 let pass = 0;
 let fail = 0;
 
-function eq(name, actual, expected) {
-  if (actual === expected) {
+function check(name, cond, detail) {
+  if (cond) {
     pass++;
     console.log('  ok  ' + name);
   } else {
     fail++;
-    console.log(
-      '  NG  ' + name + '\n    actual  : ' + JSON.stringify(actual) + '\n    expected: ' + JSON.stringify(expected)
-    );
+    console.log('  NG  ' + name + (detail ? '\n' + detail : ''));
   }
+}
+
+function eq(name, actual, expected) {
+  check(name, actual === expected, '    actual  : ' + JSON.stringify(actual) + '\n    expected: ' + JSON.stringify(expected));
 }
 
 const LINK = '[[My linknote|†]]';
@@ -188,6 +191,25 @@ console.log('\nreplacing the block inside the whole note');
   const at = doc.indexOf(blockSrc);
   const out = doc.slice(0, at) + anchored + doc.slice(at + blockSrc.length);
   eq('splice result', out, '# Title\n\nFirst paragraph.\n\nSecond paragraph. ' + LINK + ' ^ab12cd\n');
+}
+
+console.log('\ntemplate presets');
+{
+  const vars = {
+    date: '2026-08-12', time: '09:05', source: '[[Team handbook]]', sourceName: 'Team handbook',
+    sourcePath: 'Team handbook.md', title: 'Close date', body: 'Confirmed.', selection: 'the tenth business day',
+    selectionQuote: '> the tenth business day', embed: '![[Team handbook#^k3n8v1]]', blockId: 'k3n8v1',
+    author: 'A. Reader', summary: 'Team handbook — the tenth business day',
+  };
+  eq('three presets ship', TEMPLATE_PRESETS.length, 3);
+  eq('the first preset is the shipped default', TEMPLATE_PRESETS[0].template, DEFAULT_NOTE_TEMPLATE);
+  for (const preset of TEMPLATE_PRESETS) {
+    const out = tidy(renderTemplate(preset.template, vars));
+    check('no variable is left unresolved in "' + preset.name + '"', !/\{\{[a-z]/i.test(out), '    out: ' + out);
+    check('"' + preset.name + '" opens with frontmatter', out.startsWith('---\n'));
+    check('"' + preset.name + '" carries the body', out.includes('Confirmed.'));
+    check('"' + preset.name + '" is free of CJK', !/[\u3040-\u30ff\u4e00-\u9fff]/.test(preset.template));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

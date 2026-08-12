@@ -79,6 +79,8 @@ Available variables:
 | `{{author}}` | the author set in settings |
 | `{{summary}}` | source note name and a short excerpt |
 
+Three presets ship with the plugin — **Minimal**, **With the quoted selection** and **Detailed**. Pick the closest one under Settings → Linknote → Load a preset, then rewrite it. They are plain English starting points; the plugin has no opinion about the language you write in, and no built-in layout beyond the template you set.
+
 The same variables work in the filename template. Blank runs left behind by empty variables are collapsed, so a template stays readable when block IDs are turned off.
 
 ## Settings
@@ -90,6 +92,7 @@ The same variables work in the filename template. Blank runs left behind by empt
 | Date format | `YYYY-MM-DD` | tokens: `YYYY YY MMMM MMM MM DD dddd ddd HH mm ss` |
 | Author | empty | exposed as `{{author}}` |
 | Note template | see above | the whole note, frontmatter included |
+| Load a preset | — | replaces the note template with one of three starting points |
 | Link marker | `†` | the character left in the source note |
 | Add a block ID | on | needed for `{{embed}}` |
 | Insert the link marker | on | turn off to leave only a block ID |
@@ -129,6 +132,11 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.7.0
+
+- Added three template presets, loadable from the settings tab.
+- Removed the migration path for pre-0.6.0 installs, along with the localised template it carried. Nothing shipped before 0.6.0, so nothing needed migrating.
 
 ### 0.6.3
 
