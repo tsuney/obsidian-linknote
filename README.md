@@ -88,7 +88,7 @@ The same variables work in the filename template. Blank runs left behind by empt
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Linknote folder | `Linknotes` | created if missing |
-| Filename template | `{{title}}` | `.md` is added for you. `{{title}}` is shortened to 50 characters here only; the note itself keeps the full text |
+| Filename template | `{{title}}_{{date}}` | `.md` is added for you. `{{title}}` is shortened to 50 characters here only; the note itself keeps the full text |
 | Date format | `YYYY-MM-DD` | tokens: `YYYY YY MMMM MMM MM DD dddd ddd HH mm ss` |
 | Author | empty | exposed as `{{author}}` |
 | Note template | see above | the whole note, frontmatter included |
@@ -132,6 +132,16 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.8.0
+
+- The default filename template is now `{{title}}_{{date}}`. A date in the name keeps linknotes distinguishable when the same passage is annotated more than once, and keeps them ordered in the file list.
+- The composer's title field is prefilled with the start of the selection, so it is visible and editable rather than an invisible fallback.
+- The settings tab shows the filename your template will produce, updating as you type. A misspelled variable now shows up immediately instead of ending up in a filename.
+
+### 0.7.2
+
+- Each setting now states its shipped default, so a customised value is easy to tell apart from the one the plugin came with.
 
 ### 0.7.1
 

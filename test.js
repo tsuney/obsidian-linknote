@@ -19,6 +19,7 @@ const {
   sanitizeFileName,
   clampChars,
   clampBytes,
+  previewFilename,
   formatDate,
   narrowToListItem,
   normalizeInline,
@@ -242,6 +243,28 @@ console.log('\ntemplate presets');
     check('"' + preset.name + '" carries the body', out.includes('Confirmed.'));
     check('"' + preset.name + '" is free of CJK', !/[\u3040-\u30ff\u4e00-\u9fff]/.test(preset.template));
   }
+}
+
+console.log('\nfilename preview shown in settings');
+{
+  const at = new Date(2026, 7, 12, 9, 5, 3);
+  const base = { folder: 'Linknotes', dateFormat: 'YYYY-MM-DD', author: '' };
+  eq('the shipped default',
+    previewFilename(Object.assign({}, base, { filenameTemplate: '{{title}}_{{date}}' }), at),
+    'Linknotes/Quarterly close_2026-08-12.md');
+  eq('title only',
+    previewFilename(Object.assign({}, base, { filenameTemplate: '{{title}}' }), at),
+    'Linknotes/Quarterly close.md');
+  eq('a custom date format follows through',
+    previewFilename(Object.assign({}, base, { filenameTemplate: '{{title}} {{date}}', dateFormat: 'YYYY-MM-DD-dddd' }), at),
+    'Linknotes/Quarterly close 2026-08-12-Wednesday.md');
+  eq('a nested folder is shown',
+    previewFilename(Object.assign({}, base, { folder: 'Notes/Linknotes', filenameTemplate: '{{title}}' }), at),
+    'Notes/Linknotes/Quarterly close.md');
+  // A typo in a variable name shows up literally, which is the point of the preview.
+  eq('a misspelled variable is visible',
+    previewFilename(Object.assign({}, base, { filenameTemplate: '{{titel}}_{{date}}' }), at),
+    'Linknotes/{{titel}}_2026-08-12.md');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

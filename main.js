@@ -106,7 +106,7 @@ const TEMPLATE_PRESETS = [
 
 const DEFAULT_SETTINGS = {
   folder: 'Linknotes',
-  filenameTemplate: '{{title}}',
+  filenameTemplate: '{{title}}_{{date}}',
   dateFormat: 'YYYY-MM-DD',
   noteTemplate: DEFAULT_NOTE_TEMPLATE,
   marker: '†',
@@ -220,6 +220,33 @@ function clampBytes(text, maxBytes) {
     out += ch;
   }
   return out.trim();
+}
+
+/** Stand-in values so the settings tab can show what a filename will look like. */
+function sampleFilenameVars(settings, now) {
+  return {
+    title: 'Quarterly close',
+    body: '',
+    selection: 'the tenth business day',
+    selectionQuote: '> the tenth business day',
+    source: '[[Team handbook]]',
+    sourceName: 'Team handbook',
+    sourcePath: 'Team handbook.md',
+    embed: '',
+    blockId: 'k3n8v1',
+    date: formatDate(now || new Date(), settings.dateFormat),
+    time: formatDate(now || new Date(), 'HH:mm'),
+    author: settings.author || '',
+    summary: 'Team handbook — the tenth business day',
+  };
+}
+
+/** What the current filename template produces, for display in settings. */
+function previewFilename(settings, now) {
+  const vars = sampleFilenameVars(settings, now);
+  vars.title = clampChars(sanitizeFileName(vars.title), FILENAME_TITLE_MAX_CHARS);
+  const name = clampBytes(sanitizeFileName(renderTemplate(settings.filenameTemplate, vars)), FILENAME_MAX_BYTES);
+  return (settings.folder ? settings.folder + '/' : '') + (name || 'Untitled') + '.md';
 }
 
 const BLOCK_ID_RE = /[ \t]+\^([A-Za-z0-9-]+)[ \t]*$/;
@@ -782,7 +809,12 @@ class LinknoteModal extends Modal {
 
     contentEl.createDiv({ cls: 'lkn-label', text: 'Title (optional)' });
     const titleInput = contentEl.createEl('input', { cls: 'lkn-title', type: 'text' });
-    titleInput.placeholder = this.snap.text.slice(0, 30);
+    titleInput.placeholder = 'Untitled';
+    // Prefilled so it is obvious that the title is yours to shorten.
+    titleInput.value = clampChars(
+      this.snap.text.replace(/\s+/g, ' ').trim(),
+      FILENAME_TITLE_MAX_CHARS
+    );
 
     contentEl.createDiv({ cls: 'lkn-label', text: 'Note' });
     const bodyInput = contentEl.createEl('textarea', { cls: 'lkn-body' });
@@ -856,37 +888,48 @@ class LinknoteSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Linknote folder')
-      .setDesc('Where new linknotes are created. Created if missing.')
+      .setDesc('Where new linknotes are created. Created if missing. Default: ' + DEFAULT_SETTINGS.folder)
       .addText((t) =>
         t.setValue(s.folder).onChange(async (v) => {
           s.folder = v.trim() || DEFAULT_SETTINGS.folder;
+          if (typeof renderPreview === 'function') renderPreview();
           await this.plugin.saveSettings();
         })
       );
 
     new Setting(containerEl)
       .setName('Filename template')
-      .setDesc('Template variables are listed below. The .md extension is added for you.')
+      .setDesc(
+        'Template variables are listed below. The .md extension is added for you. ' +
+          '{{title}} is shortened to ' + FILENAME_TITLE_MAX_CHARS + ' characters here only. ' +
+          'Default: ' + DEFAULT_SETTINGS.filenameTemplate
+      )
       .addText((t) =>
         t.setValue(s.filenameTemplate).onChange(async (v) => {
           s.filenameTemplate = v.trim() || DEFAULT_SETTINGS.filenameTemplate;
+          renderPreview();
           await this.plugin.saveSettings();
         })
       );
 
+    const preview = containerEl.createDiv({ cls: 'lkn-preview' });
+    const renderPreview = () => preview.setText('Result: ' + previewFilename(s));
+    renderPreview();
+
     new Setting(containerEl)
       .setName('Date format')
-      .setDesc('Tokens: YYYY, YY, MMMM, MMM, MM, DD, dddd, ddd, HH, mm, ss.')
+      .setDesc('Tokens: YYYY, YY, MMMM, MMM, MM, DD, dddd, ddd, HH, mm, ss. Default: ' + DEFAULT_SETTINGS.dateFormat)
       .addText((t) =>
         t.setValue(s.dateFormat).onChange(async (v) => {
           s.dateFormat = v.trim() || DEFAULT_SETTINGS.dateFormat;
+          renderPreview();
           await this.plugin.saveSettings();
         })
       );
 
     new Setting(containerEl)
       .setName('Author')
-      .setDesc('Available as {{author}}. Leave empty if you do not need it.')
+      .setDesc('Available as {{author}}. Leave empty if you do not need it. Default: empty')
       .addText((t) =>
         t
           .setPlaceholder('(empty)')
@@ -899,7 +942,10 @@ class LinknoteSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Note template')
-      .setDesc('The whole linknote, frontmatter included. Blank runs left by empty variables are collapsed.')
+      .setDesc(
+        'The whole linknote, frontmatter included. Blank runs left by empty variables are collapsed. ' +
+          'Default: the ' + TEMPLATE_PRESETS[0].name + ' preset'
+      )
       .addTextArea((t) => {
         t.setValue(s.noteTemplate).onChange(async (v) => {
           s.noteTemplate = v || DEFAULT_NOTE_TEMPLATE;
@@ -952,7 +998,7 @@ class LinknoteSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Link marker')
-      .setDesc('The character left at the anchored spot in the source note.')
+      .setDesc('The character left at the anchored spot in the source note. Default: ' + DEFAULT_SETTINGS.marker)
       .addText((t) =>
         t.setValue(s.marker).onChange(async (v) => {
           s.marker = v || DEFAULT_SETTINGS.marker;
@@ -1016,6 +1062,8 @@ module.exports.existingBlockId = existingBlockId;
 module.exports.sanitizeFileName = sanitizeFileName;
 module.exports.clampChars = clampChars;
 module.exports.clampBytes = clampBytes;
+module.exports.previewFilename = previewFilename;
+module.exports.sampleFilenameVars = sampleFilenameVars;
 module.exports.formatDate = formatDate;
 module.exports.renderTemplate = renderTemplate;
 module.exports.tidy = tidy;

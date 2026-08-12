@@ -121,17 +121,19 @@ async function main() {
     const app = makeApp({
       [src]: '# Team handbook\n\nThe quarterly close lands on the tenth business day.\n\nExpenses are filed weekly.\n',
     });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, {});
     await p.loadSettings();
 
     const snap = makeSnapshot(app, src, 'the tenth business day', 2, 2);
     const file = await p.createLinknote(snap, { title: 'Close date', body: 'Confirmed with Finance.' });
+    const noteName = file.path.split('/').pop().replace(/\.md$/, '');
 
     const note = app._store.get(file.path);
     const source = app._store.get(src);
 
     check('the linknote lands in the default folder', file.path.startsWith('Linknotes/'), '    got: ' + file.path);
-    eq('filename comes from {{title}}', file.path, 'Linknotes/Close date.md');
+    check('filename follows the shipped default',
+      /^Linknotes\/Close date_\d{4}-\d{2}-\d{2}\.md$/.test(file.path), '    got: ' + file.path);
 
     const idMatch = source.match(/\^([a-z0-9]{6})/);
     check('a block ID was appended to the source', !!idMatch, '    source: ' + JSON.stringify(source));
@@ -140,7 +142,7 @@ async function main() {
     eq(
       'the source paragraph carries marker then block ID',
       source,
-      '# Team handbook\n\nThe quarterly close lands on the tenth business day. [[Close date|†]] ^' + id + '\n\nExpenses are filed weekly.\n'
+      '# Team handbook\n\nThe quarterly close lands on the tenth business day. [[' + noteName + '|†]] ^' + id + '\n\nExpenses are filed weekly.\n'
     );
     eq(
       'the linknote renders the default template',
@@ -208,7 +210,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: '# Doc\n\n## Background\n\nSome text.\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'Background', 2, 2);
     await p.createLinknote(snap, { title: 'On the heading', body: 'note' });
@@ -221,7 +223,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: 'Only one line here.\n' });
-    const p = makePlugin(app, { useBlockId: false });
+    const p = makePlugin(app, { useBlockId: false, filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'Only one line here.', 0, 0);
     const file = await p.createLinknote(snap, { title: 'No id', body: 'body text' });
@@ -237,7 +239,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: 'Same text.\n\nSame text.\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'Same text.', 0, 0);
     let msg = '';
@@ -254,7 +256,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: 'A pinned paragraph. ^keepme\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'A pinned paragraph.', 0, 0);
     const file = await p.createLinknote(snap, { title: 'Reuse', body: 'b' });
@@ -267,7 +269,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: 'One.\n\nTwo.\n', 'Linknotes/Same.md': 'x' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const file = await p.createLinknote(makeSnapshot(app, src, 'One.', 0, 0), { title: 'Same', body: 'b' });
     eq('second note gets -2', file.path, 'Linknotes/Same-2.md');
@@ -277,7 +279,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: '# Doc\n\nA paragraph to annotate.\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     // Selection captured normally, then the view re-rendered: ctxEl is dead.
     const snap = makeSnapshot(app, src, 'A paragraph to annotate.', 2, 2, { stale: true });
@@ -293,7 +295,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: '# Doc\n\nFirst one.\n\nA unique paragraph here.\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'A unique paragraph here.', 4, 4, { stale: true, noBlockSrc: true });
     await p.createLinknote(snap, { title: 'Fallback', body: 'b' });
@@ -307,7 +309,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: '# Doc\n\nSomething else entirely.\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'text that is no longer in the file', 2, 2, { stale: true, noBlockSrc: true });
     let msg = '';
@@ -325,7 +327,7 @@ async function main() {
     const src = 'Checklist.md';
     const list = '- [ ] wire up the button\n- [ ] read the settings\n- [ ] ship it';
     const app = makeApp({ [src]: '# Checklist\n\n' + list + '\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     // getSectionInfo() hands back the whole list, as Obsidian really does.
     const snap = makeSnapshot(app, src, 'read the settings', 2, 4);
@@ -341,7 +343,7 @@ async function main() {
   {
     const src = 'Checklist.md';
     const app = makeApp({ [src]: '- [ ] same task\n- [ ] same task\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'same task', 0, 1);
     let msg = '';
@@ -360,7 +362,7 @@ async function main() {
     const line = '- [ ] `Annotations/` に `補足 …… 2026-08-12-Wednesday.md` が作られる';
     const list = '- [ ] 段落をドラッグで選ぶと、選択の下に「† Linknote」が出る\n' + line + '\n- [ ] `Esc` で小窓を閉じると、何も作られない';
     const app = makeApp({ [src]: '# Checklist\n\n' + list + '\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     // Reading view strips the backticks from the selection.
     const rendered = 'Annotations/ に 補足 …… 2026-08-12-Wednesday.md が作られる';
@@ -379,7 +381,7 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: '# Doc\n\nThe **quarterly** close is fixed.\n' });
-    const p = makePlugin(app, null);
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'The quarterly close is fixed.', 2, 2, { stale: true, noBlockSrc: true });
     await p.createLinknote(snap, { title: 'Bold fallback', body: 'b' });
