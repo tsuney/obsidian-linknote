@@ -80,6 +80,31 @@ function makeApp(files) {
     workspace: {
       getLeaf: () => ({ openFile: async () => {} }),
     },
+    metadataCache: {
+      _blocks: new Map(),   // path -> Set of block ids
+      _handlers: [],
+      getFileCache(f) {
+        const ids = this._blocks.get(f.path);
+        if (!ids) return null;
+        const blocks = {};
+        for (const id of ids) blocks[id] = { id };
+        return { blocks };
+      },
+      on(name, cb) {
+        const ref = { name, cb };
+        this._handlers.push(ref);
+        return ref;
+      },
+      offref(ref) {
+        this._handlers = this._handlers.filter((h) => h !== ref);
+      },
+      /** Pretends Obsidian finished reindexing the file. */
+      indexBlock(file, id) {
+        if (!this._blocks.has(file.path)) this._blocks.set(file.path, new Set());
+        this._blocks.get(file.path).add(id);
+        for (const h of this._handlers.slice()) if (h.name === 'changed') h.cb(file);
+      },
+    },
   };
 }
 
@@ -125,7 +150,7 @@ async function main() {
     await p.loadSettings();
 
     const snap = makeSnapshot(app, src, 'the tenth business day', 2, 2);
-    const file = await p.createLinknote(snap, { title: 'Close date', body: 'Confirmed with Finance.' });
+    const { file } = await p.createLinknote(snap, { title: 'Close date', body: 'Confirmed with Finance.' });
     const noteName = file.path.split('/').pop().replace(/\.md$/, '');
 
     const note = app._store.get(file.path);
@@ -193,7 +218,7 @@ async function main() {
     await p.loadSettings();
 
     const snap = makeSnapshot(app, src, 'The close is the tenth business day.', 2, 2);
-    const file = await p.createLinknote(snap, { title: 'why the tenth', body: 'Confirmed.' });
+    const { file } = await p.createLinknote(snap, { title: 'why the tenth', body: 'Confirmed.' });
     const note = app._store.get(file.path);
 
     check('the filename template is honoured',
@@ -226,7 +251,7 @@ async function main() {
     const p = makePlugin(app, { useBlockId: false, filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'Only one line here.', 0, 0);
-    const file = await p.createLinknote(snap, { title: 'No id', body: 'body text' });
+    const { file } = await p.createLinknote(snap, { title: 'No id', body: 'body text' });
     const note = app._store.get(file.path);
     const source = app._store.get(src);
     eq('no block ID in the source', source, 'Only one line here. [[No id|†]]\n');
@@ -259,7 +284,7 @@ async function main() {
     const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'A pinned paragraph.', 0, 0);
-    const file = await p.createLinknote(snap, { title: 'Reuse', body: 'b' });
+    const { file } = await p.createLinknote(snap, { title: 'Reuse', body: 'b' });
     const source = app._store.get(src);
     eq('the existing ID stays last and is not duplicated', source, 'A pinned paragraph. [[Reuse|†]] ^keepme\n');
     check('the note embeds the existing ID', app._store.get(file.path).includes('![[Doc#^keepme]]'));
@@ -271,7 +296,7 @@ async function main() {
     const app = makeApp({ [src]: 'One.\n\nTwo.\n', 'Linknotes/Same.md': 'x' });
     const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
-    const file = await p.createLinknote(makeSnapshot(app, src, 'One.', 0, 0), { title: 'Same', body: 'b' });
+    const { file } = await p.createLinknote(makeSnapshot(app, src, 'One.', 0, 0), { title: 'Same', body: 'b' });
     eq('second note gets -2', file.path, 'Linknotes/Same-2.md');
   }
 
@@ -283,7 +308,7 @@ async function main() {
     await p.loadSettings();
     // Selection captured normally, then the view re-rendered: ctxEl is dead.
     const snap = makeSnapshot(app, src, 'A paragraph to annotate.', 2, 2, { stale: true });
-    const file = await p.createLinknote(snap, { title: 'Survives a re-render', body: 'b' });
+    const { file } = await p.createLinknote(snap, { title: 'Survives a re-render', body: 'b' });
     const source = app._store.get(src);
     const id = source.match(/\^([a-z0-9]{6})/)[1];
     eq('the captured block source is used', source,
@@ -367,7 +392,7 @@ async function main() {
     // Reading view strips the backticks from the selection.
     const rendered = 'Annotations/ に 補足 …… 2026-08-12-Wednesday.md が作られる';
     const snap = makeSnapshot(app, src, rendered, 2, 4);
-    const file = await p.createLinknote(snap, { title: '保存先の確認', body: 'b' });
+    const { file } = await p.createLinknote(snap, { title: '保存先の確認', body: 'b' });
     const source = app._store.get(src);
     const id = source.match(/\^([a-z0-9]{6})/)[1];
     eq('the anchor lands on the code-span task', source,
@@ -403,7 +428,7 @@ async function main() {
     });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, selection, 2, 2);
-    const file = await p.createLinknote(snap, { title: '', body: 'b' });
+    const { file } = await p.createLinknote(snap, { title: '', body: 'b' });
 
     check('the filename ends with a whole date',
       /\d{4}-\d{2}-\d{2}-[A-Za-z]+\.md$/.test(file.path), '    got: ' + file.path);
@@ -412,6 +437,62 @@ async function main() {
     const note = app._store.get(file.path);
     check('the note heading keeps the full sentence', note.includes('# ' + selection),
       '    note: ' + note.slice(0, 200));
+  }
+
+  console.log('\n16. opening waits for the cache to know the block');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: '# Doc\n\nA paragraph.\n' });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'A paragraph.', 2, 2);
+    const result = await p.createLinknote(snap, { title: 'Wait', body: 'b' });
+
+    check('the result carries what opening needs',
+      !!(result.file && result.sourceFile && result.blockId), '    got: ' + JSON.stringify(Object.keys(result)));
+
+    // The cache does not know the block yet, so the wait must not return early.
+    let resolved = false;
+    const waiting = p.waitForBlock(result.sourceFile, result.blockId, 3000).then(() => {
+      resolved = true;
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    check('it is still waiting while the cache is behind', resolved === false);
+
+    app.metadataCache.indexBlock(result.sourceFile, result.blockId);
+    await waiting;
+    check('it resolves once the block is indexed', resolved === true);
+    check('the listener was removed', app.metadataCache._handlers.length === 0,
+      '    handlers left: ' + app.metadataCache._handlers.length);
+  }
+
+  console.log('\n17. a missed cache event cannot hang the open');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: '# Doc\n\nA paragraph.\n' });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'A paragraph.', 2, 2);
+    const result = await p.createLinknote(snap, { title: 'Timeout', body: 'b' });
+
+    const started = Date.now();
+    await p.waitForBlock(result.sourceFile, result.blockId, 60); // event never fires
+    const waited = Date.now() - started;
+    check('it gives up after the timeout', waited >= 55 && waited < 1000, '    waited: ' + waited + 'ms');
+  }
+
+  console.log('\n18. no block ID means nothing to wait for');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: 'One line.\n' });
+    const p = makePlugin(app, { useBlockId: false, filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'One line.', 0, 0);
+    const result = await p.createLinknote(snap, { title: 'No id', body: 'b' });
+    eq('blockId is empty', result.blockId, '');
+    const started = Date.now();
+    await p.waitForBlock(result.sourceFile, result.blockId, 5000);
+    check('it returns immediately', Date.now() - started < 50);
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -622,10 +622,12 @@ class LinknotePlugin extends Plugin {
     }
     new LinknoteModal(this.app, this, snap, async (values) => {
       try {
-        const file = await this.createLinknote(snap, values);
-        new Notice('Linknote created: ' + file.basename);
+        const result = await this.createLinknote(snap, values);
+        new Notice('Linknote created: ' + result.file.basename);
         if (this.settings.openAfterCreate) {
-          await this.app.workspace.getLeaf('split').openFile(file);
+          // Let the cache catch up, or the embed resolves to the whole note.
+          await this.waitForBlock(result.sourceFile, result.blockId);
+          await this.app.workspace.getLeaf('split').openFile(result.file);
         }
       } catch (err) {
         console.error('[Linknote]', err);
@@ -697,7 +699,45 @@ class LinknotePlugin extends Plugin {
       });
     }
 
-    return noteFile;
+    return { file: noteFile, sourceFile, blockId: s.useBlockId ? blockId : '' };
+  }
+
+  /**
+   * Waits until the metadata cache knows about a block ID.
+   *
+   * The linknote is written before the anchor reaches the source, and the
+   * cache updates asynchronously afterwards. Opening the linknote before the
+   * cache has caught up makes `![[Note#^id]]` resolve to nothing, and Obsidian
+   * falls back to embedding the whole note. Resolves early on timeout so a
+   * missed event can never leave the caller hanging.
+   */
+  async waitForBlock(file, blockId, timeoutMs) {
+    if (!file || !blockId) return;
+    const cacheHasBlock = () => {
+      const cache = this.app.metadataCache && this.app.metadataCache.getFileCache(file);
+      return !!(cache && cache.blocks && cache.blocks[blockId]);
+    };
+    if (cacheHasBlock()) return;
+
+    await new Promise((resolve) => {
+      let settled = false;
+      let ref = null;
+      const timer = setTimeout(() => finish(), timeoutMs || 2000);
+      function finish() {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      }
+      const done = () => {
+        if (ref && this.app.metadataCache.offref) this.app.metadataCache.offref(ref);
+        finish();
+      };
+      ref = this.app.metadataCache.on('changed', (changed) => {
+        if (changed && changed.path === file.path && cacheHasBlock()) done();
+      });
+      if (cacheHasBlock()) done();
+    });
   }
 
   async writeLinknote(sourceFile, snap, values, blockId) {

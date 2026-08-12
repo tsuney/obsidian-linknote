@@ -97,7 +97,7 @@ The same variables work in the filename template. Blank runs left behind by empt
 | Add a block ID | on | needed for `{{embed}}` |
 | Insert the link marker | on | turn off to leave only a block ID |
 | Show the floating button | on | turn off for hotkey-only use |
-| Open the linknote after creating it | off | opens in a split |
+| Open the linknote after creating it | off | opens in a split, once the block reference resolves |
 
 ## How the anchoring works
 
@@ -132,6 +132,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.8.1
+
+- Fixed: with "Open the linknote after creating it" on, the newly opened note embedded the whole source instead of the anchored block. The anchor reaches the source before the metadata cache does, and an unresolved block reference falls back to embedding everything. Opening now waits for the cache, with a two-second ceiling so a missed event cannot hang.
 
 ### 0.8.0
 
