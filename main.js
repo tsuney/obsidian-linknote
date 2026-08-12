@@ -168,13 +168,58 @@ function randomId(len) {
   return s;
 }
 
-/** Strips characters that are illegal in file names or break wikilinks. */
+/**
+ * Strips characters that are illegal in file names or break wikilinks.
+ * Length is handled separately: truncating here would cut whatever the
+ * filename template puts last, such as the date.
+ */
 function sanitizeFileName(name) {
   return String(name)
     .replace(/[\\/:*?"<>|#^[\]]/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 60);
+    .replace(/^[.\s]+|[.\s]+$/g, '')
+    .trim();
+}
+
+/** How much of the title a filename may carry, and how long the name may get. */
+const FILENAME_TITLE_MAX_CHARS = 50;
+const FILENAME_MAX_BYTES = 180;
+
+/** Cuts to at most `max` characters, backing off to a word boundary. */
+function clampChars(text, max) {
+  const value = String(text);
+  if (value.length <= max) return value;
+
+  const cut = value.slice(0, max);
+  // Only back off when the cut landed inside a word.
+  if (!/\S/.test(value.charAt(max))) return cut.trim();
+
+  const onBoundary = cut.replace(/\s+\S*$/, '').trim();
+  return (onBoundary.length >= max * 0.6 ? onBoundary : cut).trim();
+}
+
+function utf8Size(ch) {
+  const c = ch.codePointAt(0);
+  if (c < 0x80) return 1;
+  if (c < 0x800) return 2;
+  if (c < 0x10000) return 3;
+  return 4;
+}
+
+/**
+ * Cuts so the UTF-8 encoding fits in `maxBytes`. File systems limit a path
+ * component by bytes, and Japanese runs three bytes per character.
+ */
+function clampBytes(text, maxBytes) {
+  let bytes = 0;
+  let out = '';
+  for (const ch of String(text)) {
+    const size = utf8Size(ch);
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    out += ch;
+  }
+  return out.trim();
 }
 
 const BLOCK_ID_RE = /[ \t]+\^([A-Za-z0-9-]+)[ \t]*$/;
@@ -634,7 +679,6 @@ class LinknotePlugin extends Plugin {
     const now = new Date();
 
     const rawTitle = (values.title || snap.text).trim().replace(/\s+/g, ' ');
-    const title = sanitizeFileName(rawTitle) || 'Untitled';
 
     await this.ensureFolder(s.folder);
 
@@ -662,7 +706,15 @@ class LinknotePlugin extends Plugin {
       summary: sourceFile.basename + ' — ' + excerpt + (snap.text.length > 40 ? '…' : ''),
     };
 
-    const fileName = sanitizeFileName(renderTemplate(s.filenameTemplate, vars)) || title;
+    // Shorten the title before the name is assembled, so that whatever the
+    // template puts after it — a date, say — survives intact.
+    const fileVars = Object.assign({}, vars, {
+      title: clampChars(sanitizeFileName(rawTitle), FILENAME_TITLE_MAX_CHARS),
+    });
+    const fileName =
+      clampBytes(sanitizeFileName(renderTemplate(s.filenameTemplate, fileVars)), FILENAME_MAX_BYTES) ||
+      clampChars(sanitizeFileName(rawTitle), FILENAME_TITLE_MAX_CHARS) ||
+      'Untitled';
     const path = this.uniquePath(normalizePath(`${s.folder}/${fileName}.md`));
     const content = tidy(renderTemplate(s.noteTemplate, vars));
 
@@ -962,6 +1014,8 @@ module.exports.normalizeInline = normalizeInline;
 module.exports.findBlockContaining = findBlockContaining;
 module.exports.existingBlockId = existingBlockId;
 module.exports.sanitizeFileName = sanitizeFileName;
+module.exports.clampChars = clampChars;
+module.exports.clampBytes = clampBytes;
 module.exports.formatDate = formatDate;
 module.exports.renderTemplate = renderTemplate;
 module.exports.tidy = tidy;

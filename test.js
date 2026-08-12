@@ -17,6 +17,8 @@ const {
   buildAnchoredBlock,
   existingBlockId,
   sanitizeFileName,
+  clampChars,
+  clampBytes,
   formatDate,
   narrowToListItem,
   normalizeInline,
@@ -125,6 +127,36 @@ console.log('\nlocating a block by its text');
 console.log('\nfile names');
 eq('illegal characters are dropped', sanitizeFileName('A/B:C*D?E"F<G>H|I#J^K[L]M'), 'ABCDEFGHIJKLM');
 eq('whitespace is collapsed', sanitizeFileName('a  b\nc'), 'a b c');
+eq('leading and trailing dots and spaces go', sanitizeFileName('  ..name..  '), 'name');
+eq('long names are not truncated here', sanitizeFileName('x'.repeat(200)).length, 200);
+
+console.log('\nlength limits');
+eq('short text is untouched', clampChars('abc', 10), 'abc');
+eq('cuts on a word boundary', clampChars('alpha beta gamma delta', 16), 'alpha beta gamma');
+eq('cuts mid-word when a boundary would lose too much', clampChars('supercalifragilistic', 10), 'supercalif');
+eq('Japanese is cut by character', clampChars('あいうえおかきくけこ', 5), 'あいうえお');
+eq('bytes: ASCII', clampBytes('abcdef', 4), 'abcd');
+eq('bytes: Japanese runs three bytes each', clampBytes('あいうえお', 9), 'あいう');
+eq('bytes: nothing fits', clampBytes('あ', 2), '');
+
+console.log('\nthe filename that was truncated in the field');
+{
+  // No title typed, so the whole selected sentence becomes the title.
+  const selection = '設定が空の既定値になっていたら、data.json が読まれていません。その場合は報告してください。';
+  const template = '補足 {{title}} {{date}}';
+  const date = '2026-08-12-Wednesday';
+  // Old behaviour cut the assembled name at 60 characters, landing inside the date.
+  const oldWay = ('補足 ' + selection + ' ' + date).slice(0, 60);
+  check('the old way lost the date', oldWay.endsWith('2026-0'), '    got: ' + oldWay);
+  // New behaviour clamps the title first.
+  const newWay = renderTemplate(template, { title: clampChars(sanitizeFileName(selection), 50), date });
+  check('the date now survives', newWay.endsWith(date), '    got: ' + newWay);
+  eq('nothing is lost from the assembled name', newWay, '補足 ' + selection + ' ' + date);
+  // A longer selection does get shortened, but only in the title part.
+  const longer = selection + 'さらに続く文章がここに入ります。';
+  const clamped = renderTemplate(template, { title: clampChars(sanitizeFileName(longer), 50), date });
+  check('an over-long title is trimmed, the date is not', clamped.endsWith(date) && clamped.length < ('補足 ' + longer + ' ' + date).length, '    got: ' + clamped);
+}
 
 console.log('\ndate formatting');
 const D = new Date(2026, 7, 12, 9, 5, 3); // 2026-08-12 Wednesday 09:05:03

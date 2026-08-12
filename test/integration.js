@@ -389,6 +389,29 @@ async function main() {
       '# Doc\n\nThe **quarterly** close is fixed. [[Bold fallback|†]] ^' + id + '\n');
   }
 
+  console.log('\n15. a long selection with no title keeps the date in the filename');
+  {
+    const src = 'Doc.md';
+    const selection = '設定が空の既定値になっていたら、data.json が読まれていません。その場合は報告してください。';
+    const app = makeApp({ [src]: '# Doc\n\n' + selection + '\n' });
+    const p = makePlugin(app, {
+      folder: 'Annotations',
+      filenameTemplate: '補足 {{title}} {{date}}',
+      dateFormat: 'YYYY-MM-DD-dddd',
+    });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, selection, 2, 2);
+    const file = await p.createLinknote(snap, { title: '', body: 'b' });
+
+    check('the filename ends with a whole date',
+      /\d{4}-\d{2}-\d{2}-[A-Za-z]+\.md$/.test(file.path), '    got: ' + file.path);
+    check('the filename stays within the byte budget',
+      Buffer.byteLength(file.path.split('/').pop(), 'utf8') <= 185, '    got: ' + file.path);
+    const note = app._store.get(file.path);
+    check('the note heading keeps the full sentence', note.includes('# ' + selection),
+      '    note: ' + note.slice(0, 200));
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

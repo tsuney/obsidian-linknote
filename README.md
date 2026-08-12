@@ -88,7 +88,7 @@ The same variables work in the filename template. Blank runs left behind by empt
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Linknote folder | `Linknotes` | created if missing |
-| Filename template | `{{title}}` | `.md` is added for you |
+| Filename template | `{{title}}` | `.md` is added for you. `{{title}}` is shortened to 50 characters here only; the note itself keeps the full text |
 | Date format | `YYYY-MM-DD` | tokens: `YYYY YY MMMM MMM MM DD dddd ddd HH mm ss` |
 | Author | empty | exposed as `{{author}}` |
 | Note template | see above | the whole note, frontmatter included |
@@ -132,6 +132,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.7.1
+
+- Fixed: long filenames were truncated after the template had been assembled, which cut whatever the template put last — typically the date. The title is now shortened before the name is built (50 characters), and the finished name is capped by bytes rather than characters, so non-Latin scripts are measured correctly.
 
 ### 0.7.0
 
