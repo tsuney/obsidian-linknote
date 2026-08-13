@@ -97,7 +97,15 @@ The same variables work in the filename template. Blank runs left behind by empt
 | Add a block ID | on | needed for `{{embed}}` |
 | Insert the link marker | on | turn off to leave only a block ID |
 | Show the floating button | on | turn off for hotkey-only use |
+| Marker style | Chip | chip, or an ordinary link |
+| Mark the annotated block | on | a thin rule beside blocks that carry a linknote |
 | Open the linknote after creating it | off | opens in a split, once the block reference resolves |
+
+## Appearance
+
+The marker in the source note is rendered as a small chip, and the block it belongs to gets a thin rule beside it, so annotated passages are visible while you read. Both are drawn at render time: **nothing extra is written to your notes**, and turning either off restores the plain look immediately.
+
+Hovering the marker previews the linknote. The shipped templates put your note above the source embed for that reason — the preview opens on what you wrote, not on the passage you are already looking at.
 
 ## How the anchoring works
 
@@ -105,13 +113,16 @@ Reading view renders Markdown, so the hard part is mapping a rendered selection 
 
 The write-back does not use line numbers. It locates the block by matching its source text against the current file. If the block cannot be found, or the same text appears more than once, Linknote refuses to write rather than guessing.
 
-Anchors are placed at block granularity, matching Obsidian's own block references. Headings, tables, code blocks and math blocks get their anchor on the following line, since appending inline would break the syntax.
+Anchors are placed at block granularity, matching Obsidian's own block references. Tables, code blocks and math blocks get their anchor on the following line, since appending inline would break the syntax.
+
+Headings are a case of their own. Obsidian has no block ID for a heading, and appending anything to the heading line would change its text and break every `[[Note#Heading]]` pointing at it. So the marker goes on the line below and the linknote embeds the heading section instead. In Reading view the marker is drawn back up next to the heading, so it reads as though it were part of it.
 
 ## Known limitations
 
 - Reading view only. Live Preview is already editable, so there is nothing to solve there.
 - Anchors are per block. Selecting one sentence inside a long paragraph anchors the paragraph. Keep `{{selection}}` in your template if you want the exact wording recorded.
 - Inside a callout or a blockquote, the anchor attaches to that line rather than to the callout as a whole.
+- A heading is referenced by its heading anchor rather than a block ID, because Obsidian has no block IDs for headings and rewriting the heading would break links to it. Rename the heading later and the reference goes stale — unlike a block ID, which survives edits.
 - In a list, the anchor attaches to the selected item. If two items have exactly the same text, Linknote stops rather than guessing.
 - If two blocks in a note have exactly the same text, Linknote stops instead of picking one.
 - There is no command to remove a linknote yet. Delete the note and remove the ` [[…]]` and ` ^id` from the source by hand.
@@ -132,6 +143,13 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.9.0
+
+- Headings are now referenced by their heading anchor. Previously a block ID landed on the line holding the marker, so the linknote embedded the marker and nothing else. The marker is also rendered next to the heading rather than under it, without touching the heading text.
+- Matching a selection falls back to a letters-and-digits-only comparison when markup normalisation is not enough. A passage carrying bold together with a same-note heading link could fail to match, because Obsidian's rendering differs from the source in ways that are not markup.
+- The marker is rendered as a small chip, and the block it is attached to gets a thin rule beside it. Both are render-time only — your notes are untouched — and both can be turned off.
+- The shipped templates now place your note above the source embed, so hovering the marker previews what you wrote rather than the passage you are already reading.
 
 ### 0.8.1
 

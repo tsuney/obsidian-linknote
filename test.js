@@ -16,6 +16,7 @@ const m = require('./main.js');
 const {
   buildAnchoredBlock,
   existingBlockId,
+  headingTextOf,
   sanitizeFileName,
   clampChars,
   clampBytes,
@@ -23,6 +24,7 @@ const {
   formatDate,
   narrowToListItem,
   normalizeInline,
+  looseKey,
   findBlockContaining,
   renderTemplate,
   tidy,
@@ -60,6 +62,15 @@ eq('null when there is none', existingBlockId('A sentence.'), null);
 eq('an existing ID survives and stays last', buildAnchoredBlock('A sentence. ^zzz999', LINK, ''), 'A sentence. ' + LINK + ' ^zzz999');
 eq('an existing ID is not duplicated when one is supplied', buildAnchoredBlock('A sentence. ^zzz999', LINK, 'zzz999'), 'A sentence. ' + LINK + ' ^zzz999');
 eq('nothing to add leaves an ID-bearing line untouched', buildAnchoredBlock('A sentence. ^zzz999', '', ''), 'A sentence. ^zzz999');
+
+console.log('\nheadings are referenced by their anchor');
+eq('plain heading', headingTextOf('## Background'), 'Background');
+eq('deeper heading', headingTextOf('#### 2.1 準備'), '2.1 準備');
+eq('a trailing block ID is dropped', headingTextOf('## Background ^abc123'), 'Background');
+eq('not a heading', headingTextOf('A paragraph.'), '');
+eq('a hash inside text is not a heading', headingTextOf('see #tag here'), '');
+eq('a heading with inline code', headingTextOf('## Use `getSectionInfo()`'), 'Use `getSectionInfo()`');
+eq('leading blank lines are skipped', headingTextOf('\n## Later'), 'Later');
 
 console.log('\nanchoring — lists');
 eq('list item', buildAnchoredBlock('- an item', LINK, 'ab12cd'), '- an item ' + LINK + ' ^ab12cd');
@@ -111,6 +122,24 @@ console.log('\nthe line that failed in the field');
   const rendered = 'Annotations/ に 補足 …… 2026-08-12-Wednesday.md が作られる';
   const block = '- [ ] 段落をドラッグで選ぶと、選択の下に「† Linknote」が出る\n' + line + '\n- [ ] `Esc` で小窓を閉じると、何も作られない';
   eq('the code-span line is now matched', narrowToListItem(block, rendered), line);
+}
+
+console.log('\nloose matching, for when rendering differs beyond markup');
+eq('punctuation and spaces fall away', looseKey('a, b — c!'), 'abc');
+eq('a heading link keeps only its words', looseKey('see [[#4.1 Existing IDs]] again'), 'see41ExistingIDsagain');
+{
+  // Obsidian may or may not show the leading # of a same-note heading link.
+  const line = '- [x] **Existing block IDs** → kept（[[#4.1 The loss of block IDs]] recheck） ✅ 2026-08-13';
+  const withHash = 'Existing block IDs → kept（#4.1 The loss of block IDs recheck） ✅ 2026-08-13';
+  const without = 'Existing block IDs → kept（4.1 The loss of block IDs recheck） ✅ 2026-08-13';
+  eq('normalised matching handles the # form', m.listItemMatches(line, withHash).length, 1);
+  eq('loose matching rescues the other form', m.listItemMatches(line, without).length, 1);
+}
+{
+  // Loose matching must not start guessing between similar items.
+  const block = '- [ ] alpha beta\n- [ ] alpha beta gamma';
+  eq('an ambiguous loose match returns both', m.listItemMatches(block, 'alpha beta').length, 2);
+  eq('so the block is left alone', narrowToListItem(block, 'alpha beta'), block);
 }
 
 console.log('\nlocating a block by its text');
@@ -193,8 +222,8 @@ console.log('\ndefault template end to end');
     tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars)),
     '---\ncreated: 2026-08-12\nsource: "[[Team handbook]]"\n---\n\n' +
       '# Close is the tenth business day\n\n' +
-      '![[Team handbook#^k3n8v1]]\n\n' +
-      'Confirmed with Finance on 2026-08-10.\n'
+      'Confirmed with Finance on 2026-08-10.\n\n' +
+      '![[Team handbook#^k3n8v1]]\n'
   );
 }
 
@@ -235,6 +264,13 @@ console.log('\ntemplate presets');
     author: 'A. Reader', summary: 'Team handbook — the tenth business day',
   };
   eq('three presets ship', TEMPLATE_PRESETS.length, 3);
+  for (const preset of TEMPLATE_PRESETS) {
+    const bodyAt = preset.template.indexOf('{{body}}');
+    const embedAt = preset.template.indexOf('{{embed}}');
+    check('"' + preset.name + '" puts the note before the source embed',
+      bodyAt !== -1 && embedAt !== -1 && bodyAt < embedAt,
+      '    body at ' + bodyAt + ', embed at ' + embedAt);
+  }
   eq('the first preset is the shipped default', TEMPLATE_PRESETS[0].template, DEFAULT_NOTE_TEMPLATE);
   for (const preset of TEMPLATE_PRESETS) {
     const out = tidy(renderTemplate(preset.template, vars));

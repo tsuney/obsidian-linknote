@@ -108,3 +108,85 @@ textarea.lkn-template {
   color: var(--text-muted);
   word-break: break-all;
 }
+
+/* Linknote — the marker left in the source note */
+.markdown-preview-view a.lkn-marker,
+.markdown-rendered a.lkn-marker {
+  display: inline-block;
+  min-width: 1.15em;
+  padding: 0 0.35em;
+  margin-left: 0.15em;
+  border-radius: var(--radius-s);
+  background-color: var(--background-modifier-hover);
+  color: var(--text-accent);
+  font-size: 0.85em;
+  line-height: 1.5;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: baseline;
+}
+
+.markdown-preview-view a.lkn-marker:hover,
+.markdown-rendered a.lkn-marker:hover {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* Plain style: leave it as an ordinary link, minus the underline. */
+.markdown-preview-view a.lkn-marker.lkn-marker-plain,
+.markdown-rendered a.lkn-marker.lkn-marker-plain {
+  display: inline;
+  min-width: 0;
+  padding: 0;
+  background-color: transparent;
+  color: var(--link-color);
+  font-size: inherit;
+  text-decoration: none;
+}
+
+.markdown-preview-view a.lkn-marker.lkn-marker-plain:hover,
+.markdown-rendered a.lkn-marker.lkn-marker-plain:hover {
+  background-color: transparent;
+  text-decoration: underline;
+}
+
+/* Linknote — the block an annotation is attached to */
+.markdown-preview-view .lkn-anchored,
+.markdown-rendered .lkn-anchored {
+  border-left: 2px solid var(--interactive-accent);
+  padding-left: 10px;
+  margin-left: -12px;
+}
+
+/* Inside a list the rule sits closer, so items stay aligned. */
+.markdown-preview-view li.lkn-anchored,
+.markdown-rendered li.lkn-anchored {
+  padding-left: 6px;
+  margin-left: -8px;
+  list-style-position: outside;
+}
+
+/* A marker relocated into the heading leaves an empty block behind. */
+.markdown-preview-view .lkn-relocated,
+.markdown-rendered .lkn-relocated {
+  display: none;
+}
+
+/* Inside a heading the chip should not inherit the heading's size. */
+.markdown-preview-view h1 a.lkn-marker,
+.markdown-preview-view h2 a.lkn-marker,
+.markdown-preview-view h3 a.lkn-marker,
+.markdown-preview-view h4 a.lkn-marker,
+.markdown-preview-view h5 a.lkn-marker,
+.markdown-preview-view h6 a.lkn-marker,
+.markdown-rendered h1 a.lkn-marker,
+.markdown-rendered h2 a.lkn-marker,
+.markdown-rendered h3 a.lkn-marker,
+.markdown-rendered h4 a.lkn-marker,
+.markdown-rendered h5 a.lkn-marker,
+.markdown-rendered h6 a.lkn-marker {
+  font-size: var(--font-ui-small);
+  font-weight: normal;
+  vertical-align: middle;
+  margin-left: 0.4em;
+}

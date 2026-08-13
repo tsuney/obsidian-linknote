@@ -36,9 +36,9 @@ source: "{{source}}"
 
 # {{title}}
 
-{{embed}}
-
 {{body}}
+
+{{embed}}
 `;
 
 const QUOTED_NOTE_TEMPLATE = `---
@@ -48,12 +48,12 @@ source: "{{source}}"
 
 # {{title}}
 
-{{embed}}
+{{body}}
 
 > [!quote] Selected text
 {{selectionQuote}}
 
-{{body}}
+{{embed}}
 `;
 
 const DETAILED_NOTE_TEMPLATE = `---
@@ -69,16 +69,16 @@ source: "{{source}}"
 
 # {{title}}
 
-## 1. Context
+## 1. Note
+
+{{body}}
+
+## 2. Context
 
 {{embed}}
 
 > [!quote] Selected text
 {{selectionQuote}}
-
-## 2. Note
-
-{{body}}
 
 ## 3. Source
 
@@ -115,6 +115,8 @@ const DEFAULT_SETTINGS = {
   showFloatingButton: true,
   openAfterCreate: false,
   author: '',
+  markerStyle: 'chip',
+  highlightAnchored: true,
 };
 
 /* --------------------------------------------------------------------------
@@ -327,15 +329,36 @@ function narrowToListItem(blockSrc, selection) {
   return matches.length === 1 ? matches[0] : blockSrc;
 }
 
+/**
+ * Last-ditch comparison key: letters and digits only.
+ *
+ * Normalising the markup is not always enough. Obsidian decides how to render
+ * a link, and the visible text can differ from the source in ways that are not
+ * markup at all — a leading `#` on a heading link, spacing around punctuation,
+ * a separator the theme inserts. Stripping everything but letters and digits
+ * survives all of that. It is only ever used to locate a line, and only when a
+ * single line matches, so a loose key cannot put the anchor in the wrong place.
+ */
+function looseKey(text) {
+  return normalizeInline(text).replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
 /** List lines within a block that contain the selection. */
 function listItemMatches(blockSrc, selection) {
   const raw = String(selection || '').split('\n')[0].trim();
   if (!raw) return [];
+
+  const lines = blockSrc.split('\n').filter((l) => LIST_MARKER_RE.test(l));
+
   const needle = normalizeInline(raw);
-  if (!needle) return [];
-  return blockSrc
-    .split('\n')
-    .filter((l) => LIST_MARKER_RE.test(l) && normalizeInline(l).indexOf(needle) !== -1);
+  if (needle) {
+    const hits = lines.filter((l) => normalizeInline(l).indexOf(needle) !== -1);
+    if (hits.length) return hits;
+  }
+
+  const loose = looseKey(raw);
+  if (!loose) return [];
+  return lines.filter((l) => looseKey(l).indexOf(loose) !== -1);
 }
 
 /**
@@ -353,18 +376,24 @@ function findBlockContaining(content, needle) {
 
   // The selection came from rendered text, so inline markup will not match
   // verbatim. Fall back to a normalised, line-by-line search.
-  const target = normalizeInline(String(needle).split('\n')[0]);
-  if (!target) return '';
-
+  const firstLine = String(needle).split('\n')[0];
   const lines = content.split('\n');
-  let hit = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() && normalizeInline(lines[i]).indexOf(target) !== -1) {
-      if (hit !== -1) return '';
-      hit = i;
+
+  const uniqueLine = (key, of) => {
+    if (!key) return -1;
+    let found = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      if (of(lines[i]).indexOf(key) === -1) continue;
+      if (found !== -1) return -2; // ambiguous
+      found = i;
     }
-  }
-  if (hit === -1) return '';
+    return found;
+  };
+
+  let hit = uniqueLine(normalizeInline(firstLine), normalizeInline);
+  if (hit < 0) hit = uniqueLine(looseKey(firstLine), looseKey);
+  if (hit < 0) return '';
   if (LIST_MARKER_RE.test(lines[hit])) return lines[hit];
 
   const offset = lines.slice(0, hit).join('\n').length + (hit ? 1 : 0);
@@ -378,6 +407,22 @@ function blockAround(content, at, len) {
   let end = content.indexOf('\n\n', at + len);
   end = end === -1 ? content.length : end;
   return content.slice(start, end).replace(/\s+$/, '');
+}
+
+/**
+ * Heading text of a block, or '' when it is not a heading.
+ *
+ * Obsidian cannot attach a block ID to a heading, and appending the marker to
+ * the heading itself would change its text — breaking every [[Note#Heading]]
+ * link pointing at it. So headings are referenced by their heading anchor
+ * instead, and the marker goes on the line below (the reading view moves it
+ * back up visually).
+ */
+function headingTextOf(blockSrc) {
+  const first = String(blockSrc).split('\n').find((l) => l.trim() !== '') || '';
+  const m = first.trim().match(/^#{1,6}\s+(.*)$/);
+  if (!m) return '';
+  return m[1].replace(BLOCK_ID_RE, '').replace(/\s+#+\s*$/, '').trim();
 }
 
 /** Reads an existing block ID off the end of a block, or null. */
@@ -405,6 +450,7 @@ class LinknotePlugin extends Plugin {
 
     this.registerMarkdownPostProcessor((el, ctx) => {
       this.ctxMap.set(el, ctx);
+      this.decorateMarkers(el);
     });
 
     this.addCommand({
@@ -552,6 +598,67 @@ class LinknotePlugin extends Plugin {
     return snap;
   }
 
+  /**
+   * Marks up rendered link markers so they can be styled, and flags the block
+   * they sit in. Nothing is written to disk: this only touches the rendered
+   * DOM, so turning it off leaves your notes exactly as they were.
+   */
+  decorateMarkers(el) {
+    const s = this.settings;
+    const marker = String(s.marker || '').trim();
+    if (!marker) return;
+
+    let links;
+    try {
+      links = Array.prototype.slice.call(el.querySelectorAll('a'));
+    } catch (e) {
+      return;
+    }
+
+    // A marker that sits alone under a heading belongs visually to the heading.
+    const movedTo = this.attachMarkerToHeading(el, marker);
+
+    for (const a of links) {
+      if (String(a.textContent || '').trim() !== marker) continue;
+
+      a.classList.add('lkn-marker');
+      if (s.markerStyle === 'plain') a.classList.add('lkn-marker-plain');
+
+      if (!s.highlightAnchored) continue;
+      // A list item is a better unit to flag than the whole list.
+      const host = movedTo || (a.closest && a.closest('li')) || el;
+      if (host && host.classList) host.classList.add('lkn-anchored');
+    }
+  }
+
+  /**
+   * Moves a marker that is alone in its block up into the heading above it,
+   * and hides the now-empty block. The file is untouched: the marker has to
+   * live on its own line, because putting it in the heading text would change
+   * the heading and break links to it.
+   */
+  attachMarkerToHeading(el, marker) {
+    try {
+      if (String(el.textContent || '').trim() !== marker) return null;
+
+      const prev = el.previousElementSibling;
+      if (!prev) return null;
+      const heading =
+        (prev.matches && prev.matches('h1, h2, h3, h4, h5, h6') && prev) ||
+        (prev.querySelector && prev.querySelector('h1, h2, h3, h4, h5, h6'));
+      if (!heading) return null;
+
+      const link = el.querySelector('a');
+      if (!link) return null;
+
+      heading.appendChild(link);
+      el.classList.add('lkn-relocated');
+      return heading;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /** Source text of the block behind a rendered element, or '' if unavailable. */
   readBlockSource(ctx, ctxEl) {
     try {
@@ -674,21 +781,31 @@ class LinknotePlugin extends Plugin {
       throw new Error('several blocks share this exact text, so the position is ambiguous');
     }
 
-    let blockId = existingBlockId(blockSrc);
+    // A heading is referenced by its own anchor, never by a block ID.
+    const headingText = headingTextOf(blockSrc);
+    const wantBlockId = s.useBlockId && !headingText;
+
+    let blockId = headingText ? null : existingBlockId(blockSrc);
     const isNewId = !blockId;
-    if (s.useBlockId && !blockId) {
+    if (wantBlockId && !blockId) {
       do {
         blockId = randomId(6);
       } while (currentContent.includes('^' + blockId));
     }
 
     // The note is written first, because the marker needs a link to it.
-    const noteFile = await this.writeLinknote(sourceFile, snap, values, s.useBlockId ? blockId : null);
+    const noteFile = await this.writeLinknote(
+      sourceFile,
+      snap,
+      values,
+      wantBlockId ? blockId : null,
+      headingText
+    );
 
     const link = s.useInlineLink
       ? app.fileManager.generateMarkdownLink(noteFile, sourceFile.path, undefined, s.marker)
       : '';
-    const idToWrite = s.useBlockId && isNewId ? blockId : '';
+    const idToWrite = wantBlockId && isNewId ? blockId : '';
     const anchored = buildAnchoredBlock(blockSrc, link, idToWrite);
 
     if (anchored !== blockSrc) {
@@ -699,7 +816,7 @@ class LinknotePlugin extends Plugin {
       });
     }
 
-    return { file: noteFile, sourceFile, blockId: s.useBlockId ? blockId : '' };
+    return { file: noteFile, sourceFile, blockId: wantBlockId ? blockId : '', headingText };
   }
 
   /**
@@ -740,7 +857,7 @@ class LinknotePlugin extends Plugin {
     });
   }
 
-  async writeLinknote(sourceFile, snap, values, blockId) {
+  async writeLinknote(sourceFile, snap, values, blockId, headingText) {
     const app = this.app;
     const s = this.settings;
     const now = new Date();
@@ -752,8 +869,9 @@ class LinknotePlugin extends Plugin {
     // A provisional path is enough to generate links relative to the folder.
     const provisional = normalizePath(`${s.folder}/tmp.md`);
     const source = app.fileManager.generateMarkdownLink(sourceFile, provisional);
-    const embed = blockId
-      ? '!' + app.fileManager.generateMarkdownLink(sourceFile, provisional, '#^' + blockId)
+    const subpath = blockId ? '#^' + blockId : headingText ? '#' + headingText : '';
+    const embed = subpath
+      ? '!' + app.fileManager.generateMarkdownLink(sourceFile, provisional, subpath)
       : '';
 
     const excerpt = snap.text.replace(/\s+/g, ' ').slice(0, 40);
@@ -1066,6 +1184,31 @@ class LinknoteSettingTab extends PluginSettingTab {
         })
       );
 
+    new Setting(containerEl).setName('Appearance').setHeading();
+
+    new Setting(containerEl)
+      .setName('Marker style')
+      .setDesc('How the marker looks in the source note. Rendering only — nothing is written to your notes.')
+      .addDropdown((d) => {
+        d.addOption('chip', 'Chip — small badge');
+        d.addOption('plain', 'Plain — an ordinary link');
+        d.setValue(s.markerStyle || DEFAULT_SETTINGS.markerStyle);
+        d.onChange(async (v) => {
+          s.markerStyle = v;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Mark the annotated block')
+      .setDesc('Draws a thin rule beside any block that carries a linknote, so annotated passages stand out while reading.')
+      .addToggle((t) =>
+        t.setValue(s.highlightAnchored).onChange(async (v) => {
+          s.highlightAnchored = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
     new Setting(containerEl).setName('Behaviour').setHeading();
 
     new Setting(containerEl)
@@ -1097,8 +1240,10 @@ module.exports.buildAnchoredBlock = buildAnchoredBlock;
 module.exports.narrowToListItem = narrowToListItem;
 module.exports.listItemMatches = listItemMatches;
 module.exports.normalizeInline = normalizeInline;
+module.exports.looseKey = looseKey;
 module.exports.findBlockContaining = findBlockContaining;
 module.exports.existingBlockId = existingBlockId;
+module.exports.headingTextOf = headingTextOf;
 module.exports.sanitizeFileName = sanitizeFileName;
 module.exports.clampChars = clampChars;
 module.exports.clampBytes = clampBytes;

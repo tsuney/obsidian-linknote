@@ -173,7 +173,7 @@ async function main() {
       'the linknote renders the default template',
       note,
       '---\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook]]"\n---\n\n' +
-        '# Close date\n\n![[Team handbook#^' + id + ']]\n\nConfirmed with Finance.\n'
+        '# Close date\n\nConfirmed with Finance.\n\n![[Team handbook#^' + id + ']]\n'
     );
     check('the other paragraph was left alone', source.includes('\nExpenses are filed weekly.\n'));
   }
@@ -231,17 +231,37 @@ async function main() {
     check('the body landed in its section', note.includes('## 2. Note\n\nConfirmed.'));
   }
 
-  console.log('\n3. heading gets its anchor on the following line');
+  console.log('\n3. a heading is referenced by its anchor, not a block ID');
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: '# Doc\n\n## Background\n\nSome text.\n' });
     const p = makePlugin(app, { filenameTemplate: '{{title}}' });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'Background', 2, 2);
-    await p.createLinknote(snap, { title: 'On the heading', body: 'note' });
+    const result = await p.createLinknote(snap, { title: 'On the heading', body: 'note' });
     const source = app._store.get(src);
-    const id = source.match(/\^([a-z0-9]{6})/)[1];
-    eq('heading untouched, anchor below', source, '# Doc\n\n## Background\n\n[[On the heading|†]] ^' + id + '\n\nSome text.\n');
+    const note = app._store.get(result.file.path);
+
+    eq('the heading text is untouched and no block ID is added', source,
+      '# Doc\n\n## Background\n\n[[On the heading|†]]\n\nSome text.\n');
+    check('no block ID was generated', result.blockId === '', '    got: ' + JSON.stringify(result.blockId));
+    eq('the heading is reported back', result.headingText, 'Background');
+    check('the linknote embeds the heading section', note.includes('![[Doc#Background]]'),
+      '    note: ' + note);
+    check('nothing points at a block ID', !note.includes('#^'), '    note: ' + note);
+  }
+
+  console.log('\n3.1 a heading that already carries a block ID');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: '# Doc\n\n## Background ^leftover\n\nSome text.\n' });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'Background', 2, 2);
+    const result = await p.createLinknote(snap, { title: 'Reuse heading', body: 'b' });
+    const note = app._store.get(result.file.path);
+    eq('the stray ID is not treated as the anchor', result.headingText, 'Background');
+    check('the embed still uses the heading', note.includes('![[Doc#Background]]'), '    note: ' + note);
   }
 
   console.log('\n4. block IDs turned off');
@@ -493,6 +513,42 @@ async function main() {
     const started = Date.now();
     await p.waitForBlock(result.sourceFile, result.blockId, 5000);
     check('it returns immediately', Date.now() - started < 50);
+  }
+
+  console.log('\n19. a list item with bold and a same-note heading link');
+  {
+    const src = 'Check.md';
+    const item = '- [ ] **Bold and a link** → works（[[#4.4 Inline markup]] recheck）';
+    const list = '- [x] plain item\n' + item + '\n- [x] another item';
+    const app = makeApp({ [src]: '# Check\n\n' + list + '\n\n## 4.4 Inline markup\n\ntext\n' });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    // Rendered text: the emphasis is gone and the heading link lost its hash.
+    const rendered = 'Bold and a link → works（4.4 Inline markup recheck）';
+    const snap = makeSnapshot(app, src, rendered, 2, 4);
+    const result = await p.createLinknote(snap, { title: 'Bold case', body: 'b' });
+    const source = app._store.get(src);
+    const id = source.match(/\^([a-z0-9]{6})/)[1];
+    eq('the anchor lands on that item', source,
+      '# Check\n\n- [x] plain item\n' + item + ' [[Bold case|†]] ^' + id +
+      '\n- [x] another item\n\n## 4.4 Inline markup\n\ntext\n');
+    check('the linknote was created', !!app._store.get(result.file.path));
+  }
+
+  console.log('\n20. a paragraph with bold and a wikilink, context lost');
+  {
+    const src = 'Doc.md';
+    const para = 'The **quarterly** close follows [[Team handbook]] exactly.';
+    const app = makeApp({ [src]: '# Doc\n\n' + para + '\n' });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const rendered = 'The quarterly close follows Team handbook exactly.';
+    const snap = makeSnapshot(app, src, rendered, 2, 2, { stale: true, noBlockSrc: true });
+    await p.createLinknote(snap, { title: 'Bold para', body: 'b' });
+    const source = app._store.get(src);
+    const id = source.match(/\^([a-z0-9]{6})/)[1];
+    eq('the paragraph was found and anchored', source,
+      '# Doc\n\n' + para + ' [[Bold para|†]] ^' + id + '\n');
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
