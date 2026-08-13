@@ -19,14 +19,66 @@
   background-color: var(--interactive-accent-hover);
 }
 
+/*
+ * Mobile: a bar along the bottom of the screen, not a button beside the
+ * selection. The OS selection menu takes the space above the selection, and
+ * below it when there is no room above, so a one-line selection leaves no
+ * free spot at all. The bottom edge is the one place it never reaches.
+ */
 body.is-mobile .lkn-float-btn {
-  padding: 6px 14px;
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  padding: 12px 14px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   font-size: var(--font-ui-small);
+  border-radius: 0;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.18);
 }
 
 /* Linknote — composer modal */
 .lkn-modal {
   max-width: 620px;
+}
+
+/*
+ * Mobile: the keyboard covers roughly half the screen and the layout viewport
+ * does not shrink, so a tall modal is half buried. The height comes from
+ * visualViewport (see fitAboveKeyboard); the quote and the note field give up
+ * their space so that Save, which sits above them, always stays in reach.
+ */
+body.is-mobile .lkn-modal-mobile {
+  max-height: var(--lkn-fit-height, 60vh);
+}
+
+body.is-mobile .lkn-modal-mobile .modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+body.is-mobile .lkn-modal-mobile h3 {
+  margin: 0 0 8px 0;
+}
+
+body.is-mobile .lkn-modal-mobile .lkn-quote {
+  flex: 0 1 auto;
+  max-height: 3.4em;
+  margin-bottom: 10px;
+}
+
+body.is-mobile .lkn-modal-mobile textarea.lkn-body {
+  flex: 1 1 auto;
+  min-height: 3.5em;
+}
+
+body.is-mobile .lkn-modal-mobile .lkn-buttons {
+  flex: 0 0 auto;
+  margin-top: 0;
+  margin-bottom: 10px;
 }
 
 .lkn-modal .lkn-quote {

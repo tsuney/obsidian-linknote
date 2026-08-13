@@ -6,7 +6,7 @@ The point is that your commentary lives in a separate, ordinary note. It shows u
 
 ## How it works
 
-1. Select some text in Reading view. A small button appears just below the selection.
+1. Select some text in Reading view. A small button appears just below the selection — on mobile, a bar along the bottom of the screen.
 2. Press it. A composer opens.
 3. Write your note and save.
 
@@ -131,6 +131,10 @@ For the same reason `{{embed}}` becomes a plain link when the anchor is a headin
 - If two blocks in a note have exactly the same text, Linknote stops instead of picking one.
 - There is no command to remove a linknote yet. Delete the note and remove the ` [[…]]` and ` ^id` from the source by hand.
 
+## Mobile
+
+Selecting text brings up a bar along the bottom of the screen rather than a button beside the selection, because the OS selection menu leaves no free space next to a short selection. The composer keeps Save and Cancel above the note field and sizes itself to what the keyboard has left visible.
+
 ## Multiple windows
 
 Linknote works in popped-out windows. Listeners are registered per window, and the composer opens in whichever window has focus.
@@ -147,6 +151,11 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.9.1
+
+- Mobile: the button is now a bar along the bottom of the screen. Next to the selection there was nowhere to put it — the OS selection menu takes the space above, and below when there is no room above, so a one-line selection left no free spot and the button could not be reached at all.
+- Mobile: Save and Cancel moved above the note field, and the composer is sized from `visualViewport`. The keyboard covers about half the screen while the layout viewport stays full height, so the lower half of the composer — the note field past its second line, and the buttons — was out of reach.
 
 ### 0.9.0
 

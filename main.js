@@ -761,9 +761,19 @@ class LinknotePlugin extends Plugin {
 
     const win = doc.defaultView || window;
     const btn = this.floatBtn.el;
-    // On mobile the OS selection menu sits above the selection, so stay below.
-    const gap = Platform.isMobile ? 12 : 6;
-    const top = Math.min(rect.bottom + gap, win.innerHeight - 48);
+
+    // On mobile there is nowhere near the selection that the OS menu will not
+    // claim: it sits above the selection, or below it when there is no room.
+    // A one-line selection leaves no gap at all. So the button leaves the
+    // neighbourhood entirely and becomes a bar along the bottom of the screen.
+    if (Platform.isMobile) {
+      btn.style.top = '';
+      btn.style.left = '';
+      btn.style.display = 'block';
+      return;
+    }
+
+    const top = Math.min(rect.bottom + 6, win.innerHeight - 48);
     const left = Math.min(Math.max(rect.left, 8), win.innerWidth - 120);
     btn.style.top = top + 'px';
     btn.style.left = left + 'px';
@@ -1019,10 +1029,16 @@ class LinknoteModal extends Modal {
 
   onOpen() {
     const { contentEl, modalEl } = this;
+    const mobile = !!Platform.isMobile;
     modalEl.addClass('lkn-modal');
+    if (mobile) modalEl.addClass('lkn-modal-mobile');
     contentEl.empty();
 
     contentEl.createEl('h3', { text: 'New linknote' });
+
+    // On mobile the on-screen keyboard takes roughly half the screen, so Save
+    // has to sit above the fold. Everything below it may be out of reach.
+    const buttons = mobile ? contentEl.createDiv({ cls: 'lkn-buttons' }) : null;
 
     const quote = contentEl.createDiv({ cls: 'lkn-quote' });
     quote.setText(this.snap.text.length > 400 ? this.snap.text.slice(0, 400) + '…' : this.snap.text);
@@ -1040,18 +1056,18 @@ class LinknoteModal extends Modal {
     const bodyInput = contentEl.createEl('textarea', { cls: 'lkn-body' });
     bodyInput.placeholder = 'Markdown is supported.';
 
-    const buttons = contentEl.createDiv({ cls: 'lkn-buttons' });
-    if (!Platform.isMobile) {
+    const row = buttons || contentEl.createDiv({ cls: 'lkn-buttons' });
+    if (!mobile) {
       const mod = Platform.isMacOS ? '⌘' : 'Ctrl';
-      buttons.createDiv({ cls: 'lkn-hint', text: `Save with ${mod} + Enter` });
+      row.createDiv({ cls: 'lkn-hint', text: `Save with ${mod} + Enter` });
     } else {
-      buttons.createDiv({ cls: 'lkn-hint' });
+      row.createDiv({ cls: 'lkn-hint' });
     }
 
-    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    const cancel = row.createEl('button', { text: 'Cancel' });
     cancel.addEventListener('click', () => this.close());
 
-    const save = buttons.createEl('button', { text: 'Save', cls: 'mod-cta' });
+    const save = row.createEl('button', { text: 'Save', cls: 'mod-cta' });
     const submit = () => {
       const values = { title: titleInput.value, body: bodyInput.value };
       this.close();
@@ -1066,11 +1082,41 @@ class LinknoteModal extends Modal {
       }
     });
 
+    if (mobile) this.fitAboveKeyboard(modalEl);
+
     // Auto-focus fights the on-screen keyboard on mobile.
-    if (!Platform.isMobile) window.setTimeout(() => bodyInput.focus(), 0);
+    if (!mobile) window.setTimeout(() => bodyInput.focus(), 0);
+  }
+
+  /**
+   * Keeps the composer inside the part of the screen the keyboard has left.
+   * The layout viewport does not shrink when the keyboard opens, so a modal
+   * centred in it ends up half buried. visualViewport reports what is really
+   * visible; the height it gives drives a max-height on the modal.
+   */
+  fitAboveKeyboard(modalEl) {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!vv || !modalEl || !modalEl.style) return;
+
+    const fit = () => {
+      const h = Math.max(160, Math.round(vv.height - 24));
+      modalEl.style.setProperty('--lkn-fit-height', h + 'px');
+    };
+
+    fit();
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    this.detachFit = () => {
+      vv.removeEventListener('resize', fit);
+      vv.removeEventListener('scroll', fit);
+    };
   }
 
   onClose() {
+    if (this.detachFit) {
+      this.detachFit();
+      this.detachFit = null;
+    }
     this.contentEl.empty();
   }
 }
