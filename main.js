@@ -1099,8 +1099,10 @@ class LinknoteModal extends Modal {
     if (!vv || !modalEl || !modalEl.style) return;
 
     const fit = () => {
-      const h = Math.max(160, Math.round(vv.height - 24));
-      modalEl.style.setProperty('--lkn-fit-height', h + 'px');
+      // Pin to the top of what is visible. Capping the height is not enough:
+      // the modal stays where it was, so the lower half goes under the keyboard.
+      modalEl.style.setProperty('--lkn-fit-top', Math.round((vv.offsetTop || 0) + 8) + 'px');
+      modalEl.style.setProperty('--lkn-fit-height', Math.max(180, Math.round(vv.height - 16)) + 'px');
     };
 
     fit();

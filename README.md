@@ -152,6 +152,11 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 ## Changelog
 
+### 0.9.2
+
+- Mobile: the composer is pinned to the top of the visible area rather than merely capped in height. Obsidian's modal is a sheet anchored to the bottom of the screen, so shrinking it trimmed the top and left the note field under the keyboard.
+- Mobile: the bar is drawn above Obsidian's own bottom navigation, which was covering it.
+
 ### 0.9.1
 
 - Mobile: the button is now a bar along the bottom of the screen. Next to the selection there was nowhere to put it — the OS selection menu takes the space above, and below when there is no room above, so a one-line selection left no free spot and the button could not be reached at all.
