@@ -30,9 +30,11 @@ Anchoring uses Obsidian's own block references, so a linknote keeps pointing at 
 
 ## Installation
 
-### From Obsidian
+Linknote is not in the community directory yet.
 
-Settings → Community plugins → Browse → search for **Linknote**.
+### With BRAT
+
+Install [BRAT](https://github.com/TfTHacker/obsidian42-brat), then **Add beta plugin** and enter `tsuney/obsidian-linknote`. BRAT keeps it up to date, and this is the only practical route on mobile.
 
 ### Manually
 
