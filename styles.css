@@ -247,6 +247,16 @@ textarea.lkn-template {
   left: -8px;
 }
 
+/*
+ * Mobile indents lists less, so there is no room to the left of the number:
+ * the rule lands between the number and the text. The marker chip already
+ * sits on the item, so the rule is simply left out there.
+ */
+body.is-mobile .markdown-preview-view li.lkn-anchored::before,
+body.is-mobile .markdown-rendered li.lkn-anchored::before {
+  content: none;
+}
+
 /* A marker relocated into the heading leaves an empty block behind. */
 .markdown-preview-view .lkn-relocated,
 .markdown-rendered .lkn-relocated {

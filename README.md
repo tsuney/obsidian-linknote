@@ -105,7 +105,7 @@ The same variables work in the filename template. Blank runs left behind by empt
 
 ## Appearance
 
-The marker in the source note is rendered as a small chip, and the block it belongs to gets a thin rule beside it, so annotated passages are visible while you read. A heading is the exception: the marker joins the heading line, and no rule is drawn. Both are drawn at render time: **nothing extra is written to your notes**, and turning either off restores the plain look immediately.
+The marker in the source note is rendered as a small chip, and the block it belongs to gets a thin rule beside it, so annotated passages are visible while you read. A heading is the exception: the marker joins the heading line, and no rule is drawn. On mobile a list item is left without a rule too, since the indent there leaves no room for one. Both are drawn at render time: **nothing extra is written to your notes**, and turning either off restores the plain look immediately.
 
 Hovering the marker previews the linknote. The shipped templates put your note above the source embed for that reason — the preview opens on what you wrote, not on the passage you are already looking at.
 
@@ -151,6 +151,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.9.4
+
+- Mobile: no rule beside an annotated list item. Lists are indented less there, so the rule fell between the number and the text. The marker chip on the item is signal enough; on desktop the rule is unchanged.
 
 ### 0.9.3
 
