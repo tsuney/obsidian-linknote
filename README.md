@@ -74,7 +74,7 @@ Available variables:
 | `{{source}}` | link to the source note |
 | `{{sourceName}}` | name of the source note |
 | `{{sourcePath}}` | path of the source note |
-| `{{embed}}` | embed of the anchored block; empty when block IDs are off |
+| `{{embed}}` | embed of the anchored block; a plain link when the anchor is a heading; empty when block IDs are off |
 | `{{blockId}}` | the block ID, without the caret |
 | `{{date}}` | creation date, using the configured date format |
 | `{{time}}` | creation time, as `HH:mm` |
@@ -117,7 +117,9 @@ The write-back does not use line numbers. It locates the block by matching its s
 
 Anchors are placed at block granularity, matching Obsidian's own block references. Tables, code blocks and math blocks get their anchor on the following line, since appending inline would break the syntax.
 
-Headings are a case of their own. Obsidian has no block ID for a heading, and appending anything to the heading line would change its text and break every `[[Note#Heading]]` pointing at it. So the marker goes on the line below and the linknote embeds the heading section instead. In Reading view the marker is drawn back up next to the heading, so it reads as though it were part of it.
+Headings are a case of their own. Obsidian has no block ID for a heading, and appending anything to the heading line would change its text and break every `[[Note#Heading]]` pointing at it. So the marker goes on the line below, and in Reading view it is drawn back up next to the heading, so it reads as though it were part of it.
+
+For the same reason `{{embed}}` becomes a plain link when the anchor is a heading. Embedding `![[Note#Heading]]` would pull in the entire section — every subsection down to the next heading of the same level — which for a top-level heading is most of the note. The link previews that section on hover instead.
 
 ## Known limitations
 
@@ -149,6 +151,7 @@ node test/integration.js  # note creation end to end, against a fake vault
 ### 0.9.0
 
 - Headings are now referenced by their heading anchor. Previously a block ID landed on the line holding the marker, so the linknote embedded the marker and nothing else. The marker is also rendered next to the heading rather than under it, without touching the heading text.
+- A heading anchor produces a link rather than an embed. `![[Note#Heading]]` embeds the whole section, which for a top-level heading is most of the note.
 - Matching a selection falls back to a letters-and-digits-only comparison when markup normalisation is not enough. A passage carrying bold together with a same-note heading link could fail to match, because Obsidian's rendering differs from the source in ways that are not markup.
 - The marker is rendered as a small chip, and the block it is attached to gets a thin rule beside it. Both are render-time only — your notes are untouched — and both can be turned off.
 - The shipped templates now place your note above the source embed, so hovering the marker previews what you wrote rather than the passage you are already reading.

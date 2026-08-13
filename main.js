@@ -615,9 +615,6 @@ class LinknotePlugin extends Plugin {
       return;
     }
 
-    // A marker that sits alone under a heading belongs visually to the heading.
-    const movedTo = this.attachMarkerToHeading(el, marker);
-
     for (const a of links) {
       if (String(a.textContent || '').trim() !== marker) continue;
 
@@ -626,8 +623,36 @@ class LinknotePlugin extends Plugin {
 
       if (!s.highlightAnchored) continue;
       // A list item is a better unit to flag than the whole list.
-      const host = movedTo || (a.closest && a.closest('li')) || el;
+      const host = (a.closest && a.closest('li')) || el;
       if (host && host.classList) host.classList.add('lkn-anchored');
+    }
+
+    // A marker alone in its block belongs visually to the heading above it.
+    this.scheduleHeadingAttach(el, marker);
+  }
+
+  /**
+   * Defers the move to the heading until the element is in the document.
+   * A post processor is handed a detached tree, so nothing outside `el` —
+   * the heading included — can be reached while it runs.
+   */
+  scheduleHeadingAttach(el, marker) {
+    try {
+      if (String(el.textContent || '').trim() !== marker) return;
+      const win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+      if (!win) return;
+
+      const run = () => {
+        const heading = this.attachMarkerToHeading(el, marker);
+        if (heading && this.settings.highlightAnchored && heading.classList) {
+          heading.classList.add('lkn-anchored');
+        }
+      };
+
+      if (typeof win.requestAnimationFrame === 'function') win.requestAnimationFrame(run);
+      else win.setTimeout(run, 0);
+    } catch (e) {
+      /* the marker simply stays on its own line */
     }
   }
 
@@ -640,16 +665,48 @@ class LinknotePlugin extends Plugin {
   attachMarkerToHeading(el, marker) {
     try {
       if (String(el.textContent || '').trim() !== marker) return null;
+      if (el.isConnected === false) return null;
 
-      const prev = el.previousElementSibling;
+      const link = el.querySelector('a');
+      if (!link) return null;
+
+      // Reading view wraps every top-level block, so the heading is not a
+      // sibling of this block but of one of its ancestors.
+      let node = el;
+      let prev = null;
+      for (let i = 0; i < 4 && node; i++) {
+        prev = node.previousElementSibling;
+        if (prev) break;
+        node = node.parentElement;
+      }
+      // A second linknote on the same heading sits behind the first, which is
+      // hidden by now. Step over anything already moved up.
+      for (let i = 0; i < 8 && prev; i++) {
+        const moved =
+          (prev.classList && prev.classList.contains('lkn-relocated')) ||
+          (prev.querySelector && prev.querySelector('.lkn-relocated'));
+        if (!moved) break;
+        prev = prev.previousElementSibling;
+      }
       if (!prev) return null;
+
       const heading =
         (prev.matches && prev.matches('h1, h2, h3, h4, h5, h6') && prev) ||
         (prev.querySelector && prev.querySelector('h1, h2, h3, h4, h5, h6'));
       if (!heading) return null;
 
-      const link = el.querySelector('a');
-      if (!link) return null;
+      // A re-render can run this twice over a heading that already has it.
+      const href = link.getAttribute ? link.getAttribute('href') || '' : '';
+      const seated = heading.querySelectorAll
+        ? Array.prototype.slice.call(heading.querySelectorAll('a.lkn-marker'))
+        : [];
+      for (const a of seated) {
+        if (a === link) return heading;
+        if ((a.getAttribute ? a.getAttribute('href') || '' : '') === href) {
+          el.classList.add('lkn-relocated');
+          return heading;
+        }
+      }
 
       heading.appendChild(link);
       el.classList.add('lkn-relocated');
@@ -870,9 +927,14 @@ class LinknotePlugin extends Plugin {
     const provisional = normalizePath(`${s.folder}/tmp.md`);
     const source = app.fileManager.generateMarkdownLink(sourceFile, provisional);
     const subpath = blockId ? '#^' + blockId : headingText ? '#' + headingText : '';
-    const embed = subpath
-      ? '!' + app.fileManager.generateMarkdownLink(sourceFile, provisional, subpath)
-      : '';
+    // A heading carries no block ID, so its anchor is a heading link. Embedding
+    // one pulls in the whole section — every subsection down to the next
+    // heading of the same level — which for a top-level heading is most of the
+    // note. A link is used instead; hovering it previews the section.
+    const embed = !subpath
+      ? ''
+      : (headingText && !blockId ? '' : '!') +
+        app.fileManager.generateMarkdownLink(sourceFile, provisional, subpath);
 
     const excerpt = snap.text.replace(/\s+/g, ' ').slice(0, 40);
     const vars = {
@@ -1025,7 +1087,7 @@ const TEMPLATE_VARIABLES = [
   ['{{source}}', 'link to the source note'],
   ['{{sourceName}}', 'name of the source note'],
   ['{{sourcePath}}', 'path of the source note'],
-  ['{{embed}}', 'embed of the anchored block, empty when block IDs are off'],
+  ['{{embed}}', 'embed of the anchored block; a link when the anchor is a heading, empty when block IDs are off'],
   ['{{blockId}}', 'the block ID, without the caret'],
   ['{{date}}', 'creation date, using the date format below'],
   ['{{time}}', 'creation time, as HH:mm'],

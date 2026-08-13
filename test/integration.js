@@ -246,7 +246,11 @@ async function main() {
       '# Doc\n\n## Background\n\n[[On the heading|†]]\n\nSome text.\n');
     check('no block ID was generated', result.blockId === '', '    got: ' + JSON.stringify(result.blockId));
     eq('the heading is reported back', result.headingText, 'Background');
-    check('the linknote embeds the heading section', note.includes('![[Doc#Background]]'),
+    // Deliberately a link, not an embed: ![[Doc#Background]] would pull in the
+    // whole section, which for a top-level heading is most of the note.
+    check('the linknote links to the heading', note.includes('[[Doc#Background]]'),
+      '    note: ' + note);
+    check('the heading section is not embedded', !note.includes('![[Doc#Background]]'),
       '    note: ' + note);
     check('nothing points at a block ID', !note.includes('#^'), '    note: ' + note);
   }
@@ -261,7 +265,8 @@ async function main() {
     const result = await p.createLinknote(snap, { title: 'Reuse heading', body: 'b' });
     const note = app._store.get(result.file.path);
     eq('the stray ID is not treated as the anchor', result.headingText, 'Background');
-    check('the embed still uses the heading', note.includes('![[Doc#Background]]'), '    note: ' + note);
+    check('the reference still uses the heading', note.includes('[[Doc#Background]]'), '    note: ' + note);
+    check('and is still a link rather than an embed', !note.includes('![[Doc#Background]]'), '    note: ' + note);
   }
 
   console.log('\n4. block IDs turned off');

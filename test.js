@@ -303,5 +303,192 @@ console.log('\nfilename preview shown in settings');
     'Linknotes/{{titel}}_2026-08-12.md');
 }
 
+/* ------------------------------------------------------------------ *
+ * Moving a marker up into the heading above it.
+ *
+ * This runs against a small fake DOM. The real thing needs a browser,
+ * and the absence of a test here is exactly why the first attempt at
+ * this shipped broken: it read el.previousElementSibling inside a
+ * post processor, where the tree is still detached and every block is
+ * about to be wrapped in a div of its own.
+ * ------------------------------------------------------------------ */
+
+function fakeEl(tag, opts) {
+  const o = opts || {};
+  const el = {
+    tagName: String(tag).toUpperCase(),
+    children: [],
+    parentElement: null,
+    attrs: o.attrs || {},
+    _classes: new Set(o.classes || []),
+    _text: o.text || '',
+    isConnected: o.isConnected !== false,
+  };
+  el.classList = {
+    add: (c) => el._classes.add(c),
+    contains: (c) => el._classes.has(c),
+  };
+  Object.defineProperty(el, 'textContent', {
+    get() {
+      return el.children.length
+        ? el.children.map((c) => c.textContent).join('')
+        : el._text;
+    },
+  });
+  Object.defineProperty(el, 'previousElementSibling', {
+    get() {
+      const p = el.parentElement;
+      if (!p) return null;
+      const i = p.children.indexOf(el);
+      return i > 0 ? p.children[i - 1] : null;
+    },
+  });
+  el.getAttribute = (k) => (k in el.attrs ? el.attrs[k] : null);
+  el.matches = (sel) =>
+    sel.split(',').map((s) => s.trim().toUpperCase()).indexOf(el.tagName) !== -1;
+  el.append = (...kids) => {
+    for (const k of kids) {
+      if (k.parentElement) {
+        const i = k.parentElement.children.indexOf(k);
+        if (i !== -1) k.parentElement.children.splice(i, 1);
+      }
+      k.parentElement = el;
+      el.children.push(k);
+    }
+    return el;
+  };
+  el.appendChild = (k) => (el.append(k), k);
+  el.descendants = function* () {
+    for (const c of el.children) {
+      yield c;
+      yield* c.descendants();
+    }
+  };
+  el.querySelector = (sel) => el.querySelectorAll(sel)[0] || null;
+  el.querySelectorAll = (sel) => {
+    const wants = sel.split(',').map((s) => s.trim());
+    const hit = (n) =>
+      wants.some((w) => {
+        const [tag, cls] = w.split('.');
+        if (tag && n.tagName !== tag.toUpperCase()) return false;
+        return cls ? n._classes.has(cls) : true;
+      });
+    return Array.from(el.descendants()).filter(hit);
+  };
+  return el;
+}
+
+/** Reading view: every top-level block sits in a wrapper of its own. */
+function readingView(blocks) {
+  const section = fakeEl('div', { classes: ['markdown-preview-section'] });
+  for (const b of blocks) {
+    const wrap = fakeEl('div');
+    wrap.append(b);
+    section.append(wrap);
+  }
+  return section;
+}
+
+function markerBlock(marker, href) {
+  const a = fakeEl('a', { text: marker, attrs: { href }, classes: ['lkn-marker'] });
+  const p = fakeEl('p');
+  p.append(a);
+  return { block: p, link: a };
+}
+
+const attach = m.prototype
+  ? m.prototype.attachMarkerToHeading
+  : require('./main.js').prototype.attachMarkerToHeading;
+
+console.log('\na marker alone under a heading is moved into it');
+{
+  const h = fakeEl('h2', { text: 'Background' });
+  const { block, link } = markerBlock('†', 'Note.md');
+  readingView([h, block]);
+
+  const heading = attach.call({}, block, '†');
+  check('the heading is returned', heading === h);
+  check('the link now sits in the heading', h.children.indexOf(link) !== -1);
+  check('the marker block is hidden', block.classList.contains('lkn-relocated'));
+}
+
+console.log('\nthe wrapper divs of Reading view are climbed');
+{
+  const h = fakeEl('h3', { text: 'Detail' });
+  const { block, link } = markerBlock('†', 'Note.md');
+  readingView([h, block]);
+  // The block's own previous sibling is null: the heading is one level up.
+  check('the block has no previous sibling of its own', block.previousElementSibling === null);
+  check('yet the heading is found', attach.call({}, block, '†') === h);
+  check('and the link moved', link.parentElement === h);
+}
+
+console.log('\na marker that does not follow a heading is left alone');
+{
+  const p0 = fakeEl('p', { text: 'Ordinary paragraph.' });
+  const { block } = markerBlock('†', 'Note.md');
+  readingView([p0, block]);
+  check('nothing is returned', attach.call({}, block, '†') === null);
+  check('the block is not hidden', !block.classList.contains('lkn-relocated'));
+}
+
+console.log('\na block that is more than the marker is left alone');
+{
+  const h = fakeEl('h2', { text: 'Background' });
+  const p = fakeEl('p');
+  p.append(fakeEl('span', { text: 'Real prose. ' }));
+  p.append(fakeEl('a', { text: '†', attrs: { href: 'Note.md' }, classes: ['lkn-marker'] }));
+  readingView([h, p]);
+  check('nothing is returned', attach.call({}, p, '†') === null);
+}
+
+console.log('\na detached element is refused');
+{
+  const h = fakeEl('h2', { text: 'Background' });
+  const { block } = markerBlock('†', 'Note.md');
+  readingView([h, block]);
+  block.isConnected = false;
+  check('nothing happens before the tree is in the document',
+    attach.call({}, block, '†') === null);
+}
+
+console.log('\na re-render does not add the marker twice');
+{
+  const h = fakeEl('h2', { text: 'Background' });
+  const { block, link } = markerBlock('†', 'Note.md');
+  readingView([h, block]);
+  attach.call({}, block, '†');
+
+  // Obsidian re-renders the paragraph; the heading still holds the old link.
+  const again = markerBlock('†', 'Note.md');
+  const wrap = fakeEl('div');
+  wrap.append(again.block);
+  h.parentElement.parentElement.append(wrap);
+
+  attach.call({}, again.block, '†');
+  const inHeading = h.children.filter((c) => c.tagName === 'A');
+  eq('the heading carries one marker, not two', inHeading.length, 1);
+  check('the first link is the one kept', inHeading[0] === link);
+  check('the repeat block is hidden all the same',
+    again.block.classList.contains('lkn-relocated'));
+}
+
+console.log('\ntwo different linknotes on one heading both move');
+{
+  const h = fakeEl('h2', { text: 'Background' });
+  const first = markerBlock('†', 'One.md');
+  const second = markerBlock('†', 'Two.md');
+  readingView([h, first.block, second.block]);
+
+  attach.call({}, first.block, '†');
+  // The second block now follows the first, which is hidden but still there.
+  check('the second block reaches the heading past the hidden first',
+    attach.call({}, second.block, '†') === h);
+  const inHeading = h.children.filter((c) => c.tagName === 'A');
+  eq('both markers sit in the heading', inHeading.length, 2);
+  check('they are in source order',
+    inHeading[0] === first.link && inHeading[1] === second.link);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
