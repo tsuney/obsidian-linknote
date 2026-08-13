@@ -105,7 +105,7 @@ The same variables work in the filename template. Blank runs left behind by empt
 
 ## Appearance
 
-The marker in the source note is rendered as a small chip, and the block it belongs to gets a thin rule beside it, so annotated passages are visible while you read. Both are drawn at render time: **nothing extra is written to your notes**, and turning either off restores the plain look immediately.
+The marker in the source note is rendered as a small chip, and the block it belongs to gets a thin rule beside it, so annotated passages are visible while you read. A heading is the exception: the marker joins the heading line, and no rule is drawn. Both are drawn at render time: **nothing extra is written to your notes**, and turning either off restores the plain look immediately.
 
 Hovering the marker previews the linknote. The shipped templates put your note above the source embed for that reason — the preview opens on what you wrote, not on the passage you are already looking at.
 
@@ -151,6 +151,11 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.9.3
+
+- Fixed: a numbered list item carrying a linknote lost its number in Reading view. The rule beside an annotated block was drawn with a border and a negative margin, which moves the content box; a list marker is laid out against that box, so the number was pushed past the left edge wherever the margin is narrow — mobile, most visibly. The rule is now a positioned pseudo-element and changes no layout.
+- A heading no longer gets a rule beside it. The marker sits in the heading line itself, which is signal enough, and a rule there read as a quote bar.
 
 ### 0.9.2
 

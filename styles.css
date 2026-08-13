@@ -215,20 +215,36 @@ textarea.lkn-template {
   text-decoration: underline;
 }
 
-/* Linknote — the block an annotation is attached to */
+/*
+ * Linknote — the block an annotation is attached to.
+ *
+ * The rule is drawn by a positioned pseudo-element, not by a border with a
+ * negative margin. A negative margin moves the content box, and a list item's
+ * number is laid out relative to that box, so the number was pushed off the
+ * left edge of the screen where the margin is narrow.
+ */
 .markdown-preview-view .lkn-anchored,
 .markdown-rendered .lkn-anchored {
-  border-left: 2px solid var(--interactive-accent);
-  padding-left: 10px;
-  margin-left: -12px;
+  position: relative;
 }
 
-/* Inside a list the rule sits closer, so items stay aligned. */
-.markdown-preview-view li.lkn-anchored,
-.markdown-rendered li.lkn-anchored {
-  padding-left: 6px;
-  margin-left: -8px;
-  list-style-position: outside;
+.markdown-preview-view .lkn-anchored::before,
+.markdown-rendered .lkn-anchored::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--interactive-accent);
+  pointer-events: none;
+}
+
+/* Inside a list the rule sits closer, clear of the bullet or number. */
+.markdown-preview-view li.lkn-anchored::before,
+.markdown-rendered li.lkn-anchored::before {
+  left: -8px;
 }
 
 /* A marker relocated into the heading leaves an empty block behind. */

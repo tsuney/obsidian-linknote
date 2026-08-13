@@ -642,11 +642,10 @@ class LinknotePlugin extends Plugin {
       const win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
       if (!win) return;
 
+      // No rule beside the heading itself: the marker now sits in the heading
+      // line, which is signal enough, and a rule there reads as a quote bar.
       const run = () => {
-        const heading = this.attachMarkerToHeading(el, marker);
-        if (heading && this.settings.highlightAnchored && heading.classList) {
-          heading.classList.add('lkn-anchored');
-        }
+        this.attachMarkerToHeading(el, marker);
       };
 
       if (typeof win.requestAnimationFrame === 'function') win.requestAnimationFrame(run);
