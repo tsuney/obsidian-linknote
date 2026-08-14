@@ -31,7 +31,16 @@ const {
 
 const DEFAULT_NOTE_TEMPLATE = `---
 created: {{date}}
-source: "{{source}}"
+source: "{{sourceBlock}}"
+---
+
+> [!NOTE]+ {{titleShort}}
+{{bodyQuote}}
+`;
+
+const EMBED_NOTE_TEMPLATE = `---
+created: {{date}}
+source: "{{sourceBlock}}"
 ---
 
 # {{title}}
@@ -43,7 +52,7 @@ source: "{{source}}"
 
 const QUOTED_NOTE_TEMPLATE = `---
 created: {{date}}
-source: "{{source}}"
+source: "{{sourceBlock}}"
 ---
 
 # {{title}}
@@ -64,7 +73,7 @@ tags:
 created: {{date}}
 author:
   - {{author}}
-source: "{{source}}"
+source: "{{sourceBlock}}"
 ---
 
 # {{title}}
@@ -82,7 +91,7 @@ source: "{{source}}"
 
 ## 3. Source
 
-{{source}}, block \`^{{blockId}}\`, as of {{date}}.
+{{sourceBlock}}, as of {{date}}.
 `;
 
 /**
@@ -91,8 +100,12 @@ source: "{{source}}"
  */
 const TEMPLATE_PRESETS = [
   {
-    name: 'Minimal — source embed and your note',
+    name: 'Minimal — your note in a callout',
     template: DEFAULT_NOTE_TEMPLATE,
+  },
+  {
+    name: 'With the source embed',
+    template: EMBED_NOTE_TEMPLATE,
   },
   {
     name: 'With the quoted selection',
@@ -106,7 +119,7 @@ const TEMPLATE_PRESETS = [
 
 const DEFAULT_SETTINGS = {
   folder: 'Linknotes',
-  filenameTemplate: '{{title}}_{{date}}',
+  filenameTemplate: '{{sourceName}}_{{anchor}}',
   dateFormat: 'YYYY-MM-DD',
   noteTemplate: DEFAULT_NOTE_TEMPLATE,
   marker: '†',
@@ -187,6 +200,9 @@ function sanitizeFileName(name) {
 const FILENAME_TITLE_MAX_CHARS = 50;
 const FILENAME_MAX_BYTES = 180;
 
+/** How much of the title {{titleShort}} keeps, for use in a heading. */
+const TITLE_SHORT_MAX_CHARS = 30;
+
 /** Cuts to at most `max` characters, backing off to a word boundary. */
 function clampChars(text, max) {
   const value = String(text);
@@ -198,6 +214,31 @@ function clampChars(text, max) {
 
   const onBoundary = cut.replace(/\s+\S*$/, '').trim();
   return (onBoundary.length >= max * 0.6 ? onBoundary : cut).trim();
+}
+
+/**
+ * A title cut down to something that fits on one line, for a callout or a
+ * heading. Measured in characters, not bytes: bytes matter only where a file
+ * system imposes them, and three bytes per character would leave Japanese at
+ * a third of the length of English.
+ */
+function shortenTitle(text, max) {
+  const value = String(text).replace(/\s+/g, ' ').trim();
+  const limit = max || TITLE_SHORT_MAX_CHARS;
+  if (value.length <= limit) return value;
+  return clampChars(value, limit) + '…';
+}
+
+/**
+ * Tidies the separators a filename template leaves behind. An empty variable
+ * — {{blockId}} on a heading, say — turns "{{sourceName}}_{{blockId}}" into
+ * "Note_", and two empty ones leave a run of separators in the middle.
+ */
+function tidyFileName(name) {
+  return String(name)
+    .replace(/[ \t]*([_-])[ \t]*(?:[_-][ \t]*)+/g, '$1')
+    .replace(/^[\s_-]+|[\s_-]+$/g, '')
+    .trim();
 }
 
 function utf8Size(ch) {
@@ -224,18 +265,28 @@ function clampBytes(text, maxBytes) {
   return out.trim();
 }
 
+/** Renders a filename template and cleans up what the variables left behind. */
+function buildFileName(template, vars) {
+  const cleaned = tidyFileName(sanitizeFileName(renderTemplate(template, vars)));
+  return tidyFileName(clampBytes(cleaned, FILENAME_MAX_BYTES));
+}
+
 /** Stand-in values so the settings tab can show what a filename will look like. */
 function sampleFilenameVars(settings, now) {
   return {
     title: 'Quarterly close',
+    titleShort: 'Quarterly close',
     body: '',
+    bodyQuote: '',
     selection: 'the tenth business day',
     selectionQuote: '> the tenth business day',
     source: '[[Team handbook]]',
+    sourceBlock: '[[Team handbook#^k3n8v1]]',
     sourceName: 'Team handbook',
     sourcePath: 'Team handbook.md',
     embed: '',
     blockId: 'k3n8v1',
+    anchor: 'k3n8v1',
     date: formatDate(now || new Date(), settings.dateFormat),
     time: formatDate(now || new Date(), 'HH:mm'),
     author: settings.author || '',
@@ -247,7 +298,7 @@ function sampleFilenameVars(settings, now) {
 function previewFilename(settings, now) {
   const vars = sampleFilenameVars(settings, now);
   vars.title = clampChars(sanitizeFileName(vars.title), FILENAME_TITLE_MAX_CHARS);
-  const name = clampBytes(sanitizeFileName(renderTemplate(settings.filenameTemplate, vars)), FILENAME_MAX_BYTES);
+  const name = buildFileName(settings.filenameTemplate, vars);
   return (settings.folder ? settings.folder + '/' : '') + (name || 'Untitled') + '.md';
 }
 
@@ -936,26 +987,38 @@ class LinknotePlugin extends Plugin {
     const provisional = normalizePath(`${s.folder}/tmp.md`);
     const source = app.fileManager.generateMarkdownLink(sourceFile, provisional);
     const subpath = blockId ? '#^' + blockId : headingText ? '#' + headingText : '';
+    // A link to the exact spot, rather than to the note as a whole. With no
+    // anchor to point at it falls back to the note, so a template that uses it
+    // still reads correctly when block IDs are turned off.
+    const sourceBlock = subpath
+      ? app.fileManager.generateMarkdownLink(sourceFile, provisional, subpath)
+      : source;
     // A heading carries no block ID, so its anchor is a heading link. Embedding
     // one pulls in the whole section — every subsection down to the next
     // heading of the same level — which for a top-level heading is most of the
     // note. A link is used instead; hovering it previews the section.
-    const embed = !subpath
-      ? ''
-      : (headingText && !blockId ? '' : '!') +
-        app.fileManager.generateMarkdownLink(sourceFile, provisional, subpath);
+    const embed = !subpath ? '' : headingText && !blockId ? sourceBlock : '!' + sourceBlock;
 
     const excerpt = snap.text.replace(/\s+/g, ' ').slice(0, 40);
+    const body = (values.body || '').trim();
     const vars = {
       title: rawTitle,
-      body: (values.body || '').trim(),
+      titleShort: shortenTitle(rawTitle),
+      body,
+      // Every line prefixed, so a note of several lines stays inside a callout.
+      bodyQuote: body ? body.split('\n').map((l) => '> ' + l).join('\n') : '',
       selection: snap.text,
       selectionQuote: snap.text.split('\n').map((l) => '> ' + l).join('\n'),
       source,
+      sourceBlock,
       sourceName: sourceFile.basename,
       sourcePath: sourceFile.path,
       embed,
       blockId: blockId || '',
+      // What the linknote is pinned to, in a form a filename can carry. A
+      // heading has no block ID, so without this every linknote on a heading
+      // in the same note would want the same name.
+      anchor: blockId || headingText || '',
       date: formatDate(now, s.dateFormat),
       time: formatDate(now, 'HH:mm'),
       author: s.author,
@@ -968,7 +1031,7 @@ class LinknotePlugin extends Plugin {
       title: clampChars(sanitizeFileName(rawTitle), FILENAME_TITLE_MAX_CHARS),
     });
     const fileName =
-      clampBytes(sanitizeFileName(renderTemplate(s.filenameTemplate, fileVars)), FILENAME_MAX_BYTES) ||
+      buildFileName(s.filenameTemplate, fileVars) ||
       clampChars(sanitizeFileName(rawTitle), FILENAME_TITLE_MAX_CHARS) ||
       'Untitled';
     const path = this.uniquePath(normalizePath(`${s.folder}/${fileName}.md`));
@@ -1127,15 +1190,19 @@ class LinknoteModal extends Modal {
  * ------------------------------------------------------------------------ */
 
 const TEMPLATE_VARIABLES = [
+  ['{{titleShort}}', 'the title, cut to 30 characters with an ellipsis, for a heading or callout'],
   ['{{title}}', 'the title you typed, or the start of the selection'],
   ['{{body}}', 'the note you typed'],
+  ['{{bodyQuote}}', 'the note you typed, every line prefixed with "> " so it stays inside a callout'],
   ['{{selection}}', 'the selected text'],
   ['{{selectionQuote}}', 'the selected text, every line prefixed with "> "'],
   ['{{source}}', 'link to the source note'],
   ['{{sourceName}}', 'name of the source note'],
   ['{{sourcePath}}', 'path of the source note'],
+  ['{{sourceBlock}}', 'link to the anchored spot, not just the note; falls back to the note when there is no anchor'],
   ['{{embed}}', 'embed of the anchored block; a link when the anchor is a heading, empty when block IDs are off'],
   ['{{blockId}}', 'the block ID, without the caret'],
+  ['{{anchor}}', 'what the linknote is pinned to: the block ID, or the heading text when it is a heading'],
   ['{{date}}', 'creation date, using the date format below'],
   ['{{time}}', 'creation time, as HH:mm'],
   ['{{author}}', 'the author set below'],
@@ -1356,6 +1423,10 @@ module.exports.headingTextOf = headingTextOf;
 module.exports.sanitizeFileName = sanitizeFileName;
 module.exports.clampChars = clampChars;
 module.exports.clampBytes = clampBytes;
+module.exports.shortenTitle = shortenTitle;
+module.exports.tidyFileName = tidyFileName;
+module.exports.buildFileName = buildFileName;
+module.exports.EMBED_NOTE_TEMPLATE = EMBED_NOTE_TEMPLATE;
 module.exports.previewFilename = previewFilename;
 module.exports.sampleFilenameVars = sampleFilenameVars;
 module.exports.formatDate = formatDate;

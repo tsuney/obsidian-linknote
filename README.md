@@ -53,14 +53,11 @@ The linknote is built from a template you control, frontmatter included. The def
 ```markdown
 ---
 created: {{date}}
-source: "{{source}}"
+source: "{{sourceBlock}}"
 ---
 
-# {{title}}
-
-{{embed}}
-
-{{body}}
+> [!NOTE]+ {{titleShort}}
+{{bodyQuote}}
 ```
 
 Available variables:
@@ -68,20 +65,24 @@ Available variables:
 | Variable | Meaning |
 | --- | --- |
 | `{{title}}` | the title you typed, or the start of the selection |
+| `{{titleShort}}` | the same title cut to 30 characters, with an ellipsis, for a heading or a callout |
 | `{{body}}` | the note you typed |
+| `{{bodyQuote}}` | the note you typed, every line prefixed with `> ` so it stays inside a callout |
 | `{{selection}}` | the selected text |
 | `{{selectionQuote}}` | the selected text, every line prefixed with `> ` |
 | `{{source}}` | link to the source note |
 | `{{sourceName}}` | name of the source note |
 | `{{sourcePath}}` | path of the source note |
+| `{{sourceBlock}}` | link to the anchored spot rather than to the note; falls back to the note link when there is no anchor |
 | `{{embed}}` | embed of the anchored block; a plain link when the anchor is a heading; empty when block IDs are off |
-| `{{blockId}}` | the block ID, without the caret |
+| `{{blockId}}` | the block ID, without the caret; empty on a heading, which has none |
+| `{{anchor}}` | what the linknote is pinned to: the block ID, or the heading text when the anchor is a heading |
 | `{{date}}` | creation date, using the configured date format |
 | `{{time}}` | creation time, as `HH:mm` |
 | `{{author}}` | the author set in settings |
 | `{{summary}}` | source note name and a short excerpt |
 
-Three presets ship with the plugin — **Minimal**, **With the quoted selection** and **Detailed**. Pick the closest one under Settings → Linknote → Load a preset, then rewrite it. They are plain English starting points; the plugin has no opinion about the language you write in, and no built-in layout beyond the template you set.
+Four presets ship with the plugin — **Minimal**, **With the source embed**, **With the quoted selection** and **Detailed**. Pick the closest one under Settings → Linknote → Load a preset, then rewrite it. They are plain English starting points; the plugin has no opinion about the language you write in, and no built-in layout beyond the template you set.
 
 The same variables work in the filename template. Blank runs left behind by empty variables are collapsed, so a template stays readable when block IDs are turned off.
 
@@ -90,11 +91,11 @@ The same variables work in the filename template. Blank runs left behind by empt
 | Setting | Default | Notes |
 | --- | --- | --- |
 | Linknote folder | `Linknotes` | created if missing |
-| Filename template | `{{title}}_{{date}}` | `.md` is added for you. `{{title}}` is shortened to 50 characters here only; the note itself keeps the full text |
+| Filename template | `{{sourceName}}_{{anchor}}` | `.md` is added for you. `{{title}}` is shortened to 50 characters here only; the note itself keeps the full text. Separators left by an empty variable are cleaned up |
 | Date format | `YYYY-MM-DD` | tokens: `YYYY YY MMMM MMM MM DD dddd ddd HH mm ss` |
 | Author | empty | exposed as `{{author}}` |
 | Note template | see above | the whole note, frontmatter included |
-| Load a preset | — | replaces the note template with one of three starting points |
+| Load a preset | — | replaces the note template with one of four starting points |
 | Link marker | `†` | the character left in the source note |
 | Add a block ID | on | needed for `{{embed}}` |
 | Insert the link marker | on | turn off to leave only a block ID |
@@ -107,7 +108,7 @@ The same variables work in the filename template. Blank runs left behind by empt
 
 The marker in the source note is rendered as a small chip, and the block it belongs to gets a thin rule beside it, so annotated passages are visible while you read. A heading is the exception: the marker joins the heading line, and no rule is drawn. On mobile a list item is left without a rule too, since the indent there leaves no room for one. Both are drawn at render time: **nothing extra is written to your notes**, and turning either off restores the plain look immediately.
 
-Hovering the marker previews the linknote. The shipped templates put your note above the source embed for that reason — the preview opens on what you wrote, not on the passage you are already looking at.
+Hovering the marker previews the linknote. The default template is your note and nothing else, and the presets that do carry an embed put your note above it, so the preview opens on what you wrote rather than on the passage you are already looking at.
 
 ## How the anchoring works
 
@@ -151,6 +152,23 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.10.1
+
+- Added `{{anchor}}`: the block ID, or the heading text when the anchor is a heading. The shipped filename template uses it. `{{blockId}}` is empty on a heading, so `{{sourceName}}_{{blockId}}` gave every linknote on a heading in the same note the same name, and the second one onwards was numbered.
+
+### 0.10.0
+
+- New shipped defaults. The linknote is a callout carrying your note, and the filename is `{{sourceName}}_{{blockId}}`, so a linknote is named after the spot it annotates. **Existing settings are untouched** — this changes what a fresh install starts with, and what the first preset loads.
+- Added `{{bodyQuote}}`: the note with every line prefixed with `> `. Without it a note of more than one line falls out of a callout after its first line.
+- Added `{{titleShort}}`: the title cut to 30 characters with an ellipsis. Measured in characters rather than bytes, so a Japanese title is not cut to a third of the length of an English one.
+- The presets are now four: the callout, the source embed (the previous default), the quoted selection, and the detailed one.
+- Filename separators left behind by an empty variable are cleaned up. `{{sourceName}}_{{blockId}}` on a heading, which has no block ID, produced `Note_`; it now produces `Note`.
+
+### 0.9.5
+
+- Added `{{sourceBlock}}`: a link to the anchored spot rather than to the note as a whole. `{{source}}` points at the note, `{{embed}}` pulls the block in; this points at it. With block IDs off it falls back to the note link, so a template that uses it still reads correctly.
+- The shipped templates now put `{{sourceBlock}}` in the `source` property, so the frontmatter points at the annotated passage rather than at the note. Existing templates are untouched; load a preset to pick up the change.
 
 ### 0.9.4
 

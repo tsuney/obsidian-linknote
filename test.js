@@ -208,40 +208,58 @@ eq('collapses runs left by empty variables', tidy('a\n\n\n\n\nb'), 'a\n\nb\n');
 eq('drops trailing spaces before newlines', tidy('a   \nb'), 'a\nb\n');
 eq('trims and ends with a single newline', tidy('\n\n  a  \n\n\n'), 'a\n');
 
-console.log('\ndefault template end to end');
+console.log('\nshortening a title for a heading');
+eq('short titles are untouched', m.shortenTitle('Close date'), 'Close date');
+eq('whitespace is collapsed first', m.shortenTitle('Close   date\n again'), 'Close date again');
+eq('a long English title is cut on a word boundary',
+  m.shortenTitle('The quarterly close lands on the tenth business day'),
+  'The quarterly close lands on…');
+eq('Japanese is cut by character, not by byte',
+  m.shortenTitle('段階 1 リリース前の点検について確認したことのまとめと今後の段取り'),
+  '段階 1 リリース前の点検について確認したことのまとめと今後…');
+eq('exactly at the limit keeps every character', m.shortenTitle('123456789012345678901234567890'), '123456789012345678901234567890');
+eq('one over the limit gains an ellipsis', m.shortenTitle('1234567890123456789012345678901'), '123456789012345678901234567890…');
+eq('the limit can be overridden', m.shortenTitle('abcdefghij', 5), 'abcde…');
+
+console.log('\ntidying what a filename template leaves behind');
+eq('an empty variable leaves no trailing separator', m.tidyFileName('Team handbook_'), 'Team handbook');
+eq('nor a leading one', m.tidyFileName('_2026-08-12'), '2026-08-12');
+eq('a run in the middle collapses', m.tidyFileName('Team handbook__k3n8v1'), 'Team handbook_k3n8v1');
+eq('mixed separators collapse too', m.tidyFileName('Team handbook_-_k3n8v1'), 'Team handbook_k3n8v1');
+eq('a date keeps its hyphens', m.tidyFileName('Close date_2026-08-12'), 'Close date_2026-08-12');
+eq('everything empty leaves nothing', m.tidyFileName('_'), '');
+
+console.log('\nthe shipped default template');
 {
   const vars = {
     date: '2026-08-12',
-    source: '[[Team handbook]]',
-    title: 'Close is the tenth business day',
-    embed: '![[Team handbook#^k3n8v1]]',
-    body: 'Confirmed with Finance on 2026-08-10.',
+    sourceBlock: '[[Team handbook#^k3n8v1]]',
+    titleShort: 'Close is the tenth business day',
+    bodyQuote: '> Confirmed with Finance.\n> Twice.',
   };
   eq(
-    'renders the shipped default',
+    'renders a callout that holds every line of the note',
     tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars)),
-    '---\ncreated: 2026-08-12\nsource: "[[Team handbook]]"\n---\n\n' +
-      '# Close is the tenth business day\n\n' +
-      'Confirmed with Finance on 2026-08-10.\n\n' +
-      '![[Team handbook#^k3n8v1]]\n'
+    '---\ncreated: 2026-08-12\nsource: "[[Team handbook#^k3n8v1]]"\n---\n\n' +
+      '> [!NOTE]+ Close is the tenth business day\n' +
+      '> Confirmed with Finance.\n' +
+      '> Twice.\n'
   );
 }
 
-console.log('\ndefault template with block IDs turned off');
+console.log('\nthe shipped default with an empty note');
 {
   const vars = {
     date: '2026-08-12',
-    source: '[[Team handbook]]',
-    title: 'Close is the tenth business day',
-    embed: '',
-    body: 'Confirmed with Finance.',
+    sourceBlock: '[[Team handbook]]',
+    titleShort: 'Close date',
+    bodyQuote: '',
   };
   eq(
-    'no stray blank block where the embed would be',
+    'no stray blank line inside the callout',
     tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars)),
     '---\ncreated: 2026-08-12\nsource: "[[Team handbook]]"\n---\n\n' +
-      '# Close is the tenth business day\n\n' +
-      'Confirmed with Finance.\n'
+      '> [!NOTE]+ Close date\n'
   );
 }
 
@@ -259,16 +277,18 @@ console.log('\ntemplate presets');
 {
   const vars = {
     date: '2026-08-12', time: '09:05', source: '[[Team handbook]]', sourceName: 'Team handbook',
-    sourcePath: 'Team handbook.md', title: 'Close date', body: 'Confirmed.', selection: 'the tenth business day',
+    sourcePath: 'Team handbook.md', sourceBlock: '[[Team handbook#^k3n8v1]]', title: 'Close date', body: 'Confirmed.', selection: 'the tenth business day',
     selectionQuote: '> the tenth business day', embed: '![[Team handbook#^k3n8v1]]', blockId: 'k3n8v1',
     author: 'A. Reader', summary: 'Team handbook — the tenth business day',
+    titleShort: 'Close date', bodyQuote: '> Confirmed.',
   };
-  eq('three presets ship', TEMPLATE_PRESETS.length, 3);
+  eq('four presets ship', TEMPLATE_PRESETS.length, 4);
   for (const preset of TEMPLATE_PRESETS) {
-    const bodyAt = preset.template.indexOf('{{body}}');
     const embedAt = preset.template.indexOf('{{embed}}');
+    if (embedAt === -1) continue;   // the callout preset carries no embed
+    const bodyAt = preset.template.indexOf('{{body}}');
     check('"' + preset.name + '" puts the note before the source embed',
-      bodyAt !== -1 && embedAt !== -1 && bodyAt < embedAt,
+      bodyAt !== -1 && bodyAt < embedAt,
       '    body at ' + bodyAt + ', embed at ' + embedAt);
   }
   eq('the first preset is the shipped default', TEMPLATE_PRESETS[0].template, DEFAULT_NOTE_TEMPLATE);
@@ -277,6 +297,8 @@ console.log('\ntemplate presets');
     check('no variable is left unresolved in "' + preset.name + '"', !/\{\{[a-z]/i.test(out), '    out: ' + out);
     check('"' + preset.name + '" opens with frontmatter', out.startsWith('---\n'));
     check('"' + preset.name + '" carries the body', out.includes('Confirmed.'));
+    check('"' + preset.name + '" points the source property at the anchored spot',
+      out.includes('source: "[[Team handbook#^k3n8v1]]"'), '    out: ' + out);
     check('"' + preset.name + '" is free of CJK', !/[\u3040-\u30ff\u4e00-\u9fff]/.test(preset.template));
   }
 }
@@ -286,8 +308,15 @@ console.log('\nfilename preview shown in settings');
   const at = new Date(2026, 7, 12, 9, 5, 3);
   const base = { folder: 'Linknotes', dateFormat: 'YYYY-MM-DD', author: '' };
   eq('the shipped default',
+    previewFilename(Object.assign({}, base, { filenameTemplate: '{{sourceName}}_{{anchor}}' }), at),
+    'Linknotes/Team handbook_k3n8v1.md');
+  eq('the previous default still works',
     previewFilename(Object.assign({}, base, { filenameTemplate: '{{title}}_{{date}}' }), at),
     'Linknotes/Quarterly close_2026-08-12.md');
+  // A heading has no block ID, so the separator would otherwise be left hanging.
+  eq('an empty variable leaves no trailing separator',
+    previewFilename(Object.assign({}, base, { filenameTemplate: '{{sourceName}}_{{embed}}' }), at),
+    'Linknotes/Team handbook.md');
   eq('title only',
     previewFilename(Object.assign({}, base, { filenameTemplate: '{{title}}' }), at),
     'Linknotes/Quarterly close.md');

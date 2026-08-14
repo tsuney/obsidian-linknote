@@ -158,7 +158,7 @@ async function main() {
 
     check('the linknote lands in the default folder', file.path.startsWith('Linknotes/'), '    got: ' + file.path);
     check('filename follows the shipped default',
-      /^Linknotes\/Close date_\d{4}-\d{2}-\d{2}\.md$/.test(file.path), '    got: ' + file.path);
+      /^Linknotes\/Team handbook_[a-z0-9]{6}\.md$/.test(file.path), '    got: ' + file.path);
 
     const idMatch = source.match(/\^([a-z0-9]{6})/);
     check('a block ID was appended to the source', !!idMatch, '    source: ' + JSON.stringify(source));
@@ -172,8 +172,8 @@ async function main() {
     eq(
       'the linknote renders the default template',
       note,
-      '---\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook]]"\n---\n\n' +
-        '# Close date\n\nConfirmed with Finance.\n\n![[Team handbook#^' + id + ']]\n'
+      '---\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook#^' + id + ']]"\n---\n\n' +
+        '> [!NOTE]+ Close date\n> Confirmed with Finance.\n'
     );
     check('the other paragraph was left alone', source.includes('\nExpenses are filed weekly.\n'));
   }
@@ -255,6 +255,58 @@ async function main() {
     check('nothing points at a block ID', !note.includes('#^'), '    note: ' + note);
   }
 
+  console.log('\n3.2 {{sourceBlock}} points at the anchored spot');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: 'Only one line here.\n\nAnd another.\n' });
+    const p = makePlugin(app, {
+      filenameTemplate: '{{title}}',
+      noteTemplate: 'from: {{sourceBlock}}\nnote: {{source}}\n',
+    });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'Only one line here.', 0, 0);
+    const result = await p.createLinknote(snap, { title: 'Anchored', body: '' });
+    const note = app._store.get(result.file.path);
+
+    check('it links to the block, not just the note',
+      note.includes('from: [[Doc#^' + result.blockId + ']]'), '    note: ' + note);
+    check('it is a link, not an embed', !note.includes('!\[\[Doc#^'), '    note: ' + note);
+    check('{{source}} still points at the note as a whole',
+      note.includes('note: [[Doc]]'), '    note: ' + note);
+  }
+
+  console.log('\n3.3 {{sourceBlock}} falls back to the note when there is no anchor');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: 'Only one line here.\n' });
+    const p = makePlugin(app, {
+      useBlockId: false,
+      filenameTemplate: '{{title}}',
+      noteTemplate: 'from: {{sourceBlock}}\n',
+    });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'Only one line here.', 0, 0);
+    const { file } = await p.createLinknote(snap, { title: 'No anchor', body: '' });
+    const note = app._store.get(file.path);
+    check('the note link is used instead of an empty value',
+      note.includes('from: [[Doc]]'), '    note: ' + note);
+  }
+
+  console.log('\n3.4 {{sourceBlock}} on a heading uses the heading anchor');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: '# Doc\n\n## Background\n\nSome text.\n' });
+    const p = makePlugin(app, {
+      filenameTemplate: '{{title}}',
+      noteTemplate: 'from: {{sourceBlock}}\n',
+    });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'Background', 2, 2);
+    const { file } = await p.createLinknote(snap, { title: 'Heading anchor', body: '' });
+    const note = app._store.get(file.path);
+    check('it links to the heading', note.includes('from: [[Doc#Background]]'), '    note: ' + note);
+  }
+
   console.log('\n3.1 a heading that already carries a block ID');
   {
     const src = 'Doc.md';
@@ -273,7 +325,11 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: 'Only one line here.\n' });
-    const p = makePlugin(app, { useBlockId: false, filenameTemplate: '{{title}}' });
+    const p = makePlugin(app, {
+      useBlockId: false,
+      filenameTemplate: '{{title}}',
+      noteTemplate: require(path.join(__dirname, '..', 'main.js')).EMBED_NOTE_TEMPLATE,
+    });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'Only one line here.', 0, 0);
     const { file } = await p.createLinknote(snap, { title: 'No id', body: 'body text' });
@@ -306,7 +362,10 @@ async function main() {
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: 'A pinned paragraph. ^keepme\n' });
-    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    const p = makePlugin(app, {
+      filenameTemplate: '{{title}}',
+      noteTemplate: require(path.join(__dirname, '..', 'main.js')).EMBED_NOTE_TEMPLATE,
+    });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'A pinned paragraph.', 0, 0);
     const { file } = await p.createLinknote(snap, { title: 'Reuse', body: 'b' });
@@ -450,6 +509,8 @@ async function main() {
       folder: 'Annotations',
       filenameTemplate: '補足 {{title}} {{date}}',
       dateFormat: 'YYYY-MM-DD-dddd',
+      // The embed preset keeps {{title}} whole, which is what this checks.
+      noteTemplate: require(path.join(__dirname, '..', 'main.js')).EMBED_NOTE_TEMPLATE,
     });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, selection, 2, 2);
@@ -538,6 +599,69 @@ async function main() {
       '# Check\n\n- [x] plain item\n' + item + ' [[Bold case|†]] ^' + id +
       '\n- [x] another item\n\n## 4.4 Inline markup\n\ntext\n');
     check('the linknote was created', !!app._store.get(result.file.path));
+  }
+
+  console.log('\n3.5 {{anchor}} names a heading linknote after the heading');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: '# Doc\n\n## Background\n\nSome text.\n\n## Later\n\nMore.\n' });
+    const p = makePlugin(app, {});
+    await p.loadSettings();
+
+    const first = await p.createLinknote(makeSnapshot(app, src, 'Background', 2, 2), { title: 'a', body: 'x' });
+    // The first write inserted a marker line, so the second heading has moved.
+    const at = app._store.get(src).split('\n').indexOf('## Later');
+    const second = await p.createLinknote(makeSnapshot(app, src, 'Later', at, at), { title: 'b', body: 'y' });
+
+    eq('the first is named after its heading', first.file.path, 'Linknotes/Doc_Background.md');
+    eq('the second gets its own name, not a -2 suffix', second.file.path, 'Linknotes/Doc_Later.md');
+  }
+
+  console.log('\n3.6 {{anchor}} is the block ID when there is one');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: 'A paragraph to annotate.\n' });
+    const p = makePlugin(app, {});
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'A paragraph to annotate.', 0, 0);
+    const result = await p.createLinknote(snap, { title: 'a', body: 'x' });
+    eq('the block ID is used', result.file.path, 'Linknotes/Doc_' + result.blockId + '.md');
+  }
+
+  console.log('\n21. the shipped default keeps a multi-line note inside the callout');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: 'A paragraph to annotate.\n' });
+    const p = makePlugin(app, {});
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'A paragraph to annotate.', 0, 0);
+    const { file } = await p.createLinknote(snap, {
+      title: 'Three lines',
+      body: 'first line\nsecond line\nthird line',
+    });
+    const note = app._store.get(file.path);
+    const lines = note.split('\n');
+    const at = lines.findIndex((l) => l.startsWith('> [!NOTE]'));
+    check('the callout opens', at !== -1, '    note: ' + note);
+    check('every line of the note is inside it',
+      lines[at + 1] === '> first line' && lines[at + 2] === '> second line' && lines[at + 3] === '> third line',
+      '    note: ' + note);
+  }
+
+  console.log('\n22. a long title is shortened in the callout but not in the note body');
+  {
+    const src = 'Doc.md';
+    const long = 'The quarterly close lands on the tenth business day of the month';
+    const app = makeApp({ [src]: 'A paragraph to annotate.\n' });
+    const p = makePlugin(app, { noteTemplate: '{{titleShort}}\n---\n{{title}}\n' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'A paragraph to annotate.', 0, 0);
+    const { file } = await p.createLinknote(snap, { title: long, body: '' });
+    const note = app._store.get(file.path);
+    const [short, , full] = note.split('\n');
+    check('the short form ends in an ellipsis', short.endsWith('…'), '    got: ' + short);
+    check('the short form stays within 31 characters', short.length <= 31, '    got: ' + short);
+    eq('the full title is untouched', full, long);
   }
 
   console.log('\n20. a paragraph with bold and a wikilink, context lost');
