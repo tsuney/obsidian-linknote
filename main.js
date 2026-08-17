@@ -24,6 +24,7 @@ const {
   TFile,
   MarkdownRenderer,
   MarkdownRenderChild,
+  ItemView,
   normalizePath,
 } = obsidian;
 
@@ -174,6 +175,7 @@ const DEFAULT_SETTINGS = {
 const CARD_GAP = 24;
 const CARD_MIN_TEXT = 380;
 const CARD_STACK_GAP = 12;
+const LIST_VIEW_TYPE = 'linknote-list';
 
 /** The gutter a card of this width needs, and the pane that can afford it. */
 function cardGutter(width) {
@@ -348,6 +350,19 @@ function sectionUnderHeading(text, heading) {
   }
 
   return start === -1 ? '' : lines.slice(start).join('\n').trim();
+}
+
+/**
+ * Strips a source line back to the passage itself: the marker link and the
+ * block ID are Linknote's own furniture, and a list marker is not part of the
+ * text either. Used to say, in a list, which passage a linknote is attached to.
+ */
+function anchorExcerpt(line, max) {
+  const bare = String(line == null ? '' : line)
+    .replace(/[ \t]+\^[A-Za-z0-9-]+[ \t]*$/, '')
+    .replace(/\s*\[\[[^\]]*\]\]\s*$/, '')
+    .replace(/\s*\[[^\]]*\]\([^)]*\)\s*$/, '');
+  return shortenTitle(normalizeInline(bare), max || 60);
 }
 
 /** Everything after the frontmatter block, or the whole text if there is none. */
@@ -751,6 +766,15 @@ class LinknotePlugin extends Plugin {
     this.app.workspace.onLayoutReady(settleSoon);
     this.registerDomEvent(window, 'resize', () => this.refitCards());
 
+    this.registerView(LIST_VIEW_TYPE, (leaf) => new LinknoteListView(leaf, this));
+    this.addRibbonIcon('message-square', 'Linknotes in this note', () => this.openList());
+
+    this.addCommand({
+      id: 'open-list',
+      name: 'Show the linknotes in this note',
+      callback: () => this.openList(),
+    });
+
     this.addCommand({
       id: 'toggle-cards',
       name: 'Show or stow the linknote cards',
@@ -925,6 +949,20 @@ class LinknotePlugin extends Plugin {
       a.classList.add('lkn-marker');
       if (s.markerStyle === 'plain') a.classList.add('lkn-marker-plain');
 
+      // On a phone the marker opens a sheet rather than the note itself: the
+      // point of a note in the margin is to be read without leaving the page.
+      if (Platform.isMobile && !a.dataset.lknSheet) {
+        a.dataset.lknSheet = '1';
+        a.addEventListener('click', (evt) => {
+          const ctx = this.ctxMap.get(el);
+          const sourcePath = (ctx && ctx.sourcePath) || '';
+          if (!sourcePath) return;
+          evt.preventDefault();
+          evt.stopPropagation();
+          this.openSheetFor(a, sourcePath);
+        });
+      }
+
       if (!s.highlightAnchored) continue;
       // A list item is a better unit to flag than the whole list.
       const host = (a.closest && a.closest('li')) || el;
@@ -1043,7 +1081,9 @@ class LinknotePlugin extends Plugin {
    * a full-width note, or a phone. Nothing is written to the note.
    */
   renderCards(el, ctx) {
-    if (!this.settings.showCards) return;
+    // Not on a phone. There is no margin to put a card in and inline cards
+    // interrupt the reading; the sheet and the sidebar answer this instead.
+    if (!this.settings.showCards || Platform.isMobile) return;
 
     let links;
     try {
@@ -1167,6 +1207,124 @@ class LinknotePlugin extends Plugin {
 
     // The card just changed height, so everything below it has to move.
     this.scheduleRelayout();
+  }
+
+  /**
+   * The linknotes a note carries, in the order they appear in it. Read from
+   * the note's own link cache, so it costs nothing and needs no scanning: a
+   * link into the linknote folder is a linknote by definition.
+   */
+  async linknotesOf(file) {
+    if (!file) return [];
+    let links = [];
+    try {
+      const cache = this.app.metadataCache.getFileCache(file);
+      links = (cache && cache.links) || [];
+    } catch (e) {
+      return [];
+    }
+    if (!links.length) return [];
+
+    let lines = [];
+    try {
+      lines = (await this.app.vault.cachedRead(file)).split('\n');
+    } catch (e) {
+      lines = [];
+    }
+
+    const out = [];
+    const seen = new Set();
+    for (const link of links) {
+      const target = String((link && link.link) || '').split('#')[0];
+      if (!target) continue;
+
+      let note = null;
+      try {
+        note = this.app.metadataCache.getFirstLinkpathDest(target, file.path);
+      } catch (e) {
+        note = null;
+      }
+      if (!note || !this.isLinknote(note) || seen.has(note.path)) continue;
+      seen.add(note.path);
+
+      const line = (link.position && link.position.start && link.position.start.line) || 0;
+      const source = lines[line] || '';
+      const idMatch = source.match(/\^([A-Za-z0-9-]+)[ \t]*$/);
+
+      // A marker on a heading sits on a line of its own, so stripping it away
+      // leaves nothing. The heading above it is the passage in that case.
+      let passage = anchorExcerpt(source);
+      if (!passage) {
+        for (let i = line - 1; i >= 0 && i > line - 5; i--) {
+          const heading = headingTextOf(lines[i]);
+          if (heading) {
+            passage = shortenTitle(normalizeInline(heading), 60);
+            break;
+          }
+          if (lines[i].trim()) break;
+        }
+      }
+
+      out.push({ file: note, line, blockId: idMatch ? idMatch[1] : '', passage });
+    }
+    return out;
+  }
+
+  /** What a linknote says, for a list or a sheet: who, when, and the note. */
+  async readLinknote(file) {
+    const out = { author: '', created: '', text: '' };
+    try {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = (cache && cache.frontmatter) || null;
+      if (fm && fm.author) out.author = String(Array.isArray(fm.author) ? fm.author.join(', ') : fm.author);
+      if (fm && typeof fm.created === 'string' && fm.created.trim()) {
+        out.created = fm.created.trim().split(/\s+/)[0];
+      } else if (file.stat && file.stat.ctime) {
+        out.created = formatDate(new Date(file.stat.ctime), this.settings.dateFormat);
+      }
+      const content = await this.app.vault.cachedRead(file);
+      out.text = sectionUnderHeading(content, this.settings.bodyHeading);
+      if (!out.text && fm && typeof fm.body === 'string') out.text = fm.body;
+      if (!out.text) out.text = stripFrontmatter(content);
+    } catch (e) {
+      /* what was gathered is enough */
+    }
+    return out;
+  }
+
+  /** Draws the rows shared by the sidebar and the sheet. */
+  async renderLinknoteRows(target, sourceFile, entries) {
+    target.empty();
+    if (!entries.length) {
+      target.createDiv({ cls: 'lkn-list-empty', text: 'No linknotes in this note.' });
+      return;
+    }
+
+    for (const entry of entries) {
+      const row = target.createDiv({ cls: 'lkn-list-item' });
+
+      // Who and when first, so every row is headed the same way. The passage
+      // is not always there — a heading anchor may leave nothing to quote.
+      const info = await this.readLinknote(entry.file);
+      const meta = [info.author, info.created].filter(Boolean).join(' · ');
+      row.createDiv({ cls: 'lkn-list-meta', text: meta || entry.file.basename });
+
+      if (entry.passage) {
+        const passage = row.createDiv({ cls: 'lkn-list-passage', text: entry.passage });
+        passage.setAttribute('aria-label', 'Go to the passage');
+        passage.addEventListener('click', (evt) => {
+          evt.stopPropagation();
+          const sub = entry.blockId ? '#^' + entry.blockId : '';
+          this.app.workspace.openLinkText(sourceFile.path + sub, sourceFile.path, false);
+        });
+      }
+
+      const body = row.createDiv({ cls: 'lkn-list-body' });
+      body.setText(info.text || entry.file.basename);
+      row.addEventListener('click', (evt) => {
+        this.app.workspace.openLinkText(entry.file.path, sourceFile.path, evt.metaKey || evt.ctrlKey);
+      });
+    }
   }
 
   /** True for a note that lives in the linknote folder. */
@@ -1397,6 +1555,40 @@ class LinknotePlugin extends Plugin {
       body.style.setProperty('--lkn-card-color', colour);
       body.classList.toggle('lkn-cards-collapsed', !!s.cardsCollapsed);
     }
+  }
+
+  /** Reveals the list in the right sidebar, opening it if it is not there. */
+  async openList() {
+    const workspace = this.app.workspace;
+    let leaf = workspace.getLeavesOfType(LIST_VIEW_TYPE)[0];
+    if (!leaf) {
+      leaf = workspace.getRightLeaf(false);
+      if (!leaf) return;
+      await leaf.setViewState({ type: LIST_VIEW_TYPE, active: true });
+    }
+    workspace.revealLeaf(leaf);
+  }
+
+  /** The sheet a marker opens: the linknotes attached to that one block. */
+  async openSheetFor(link, sourcePath) {
+    const file = sourcePath && this.app.vault.getAbstractFileByPath(sourcePath);
+    if (!file) return;
+
+    const all = await this.linknotesOf(file);
+    const linktext = (link.getAttribute('data-href') || link.getAttribute('href') || '').split('#')[0];
+    let target = null;
+    try {
+      target = this.app.metadataCache.getFirstLinkpathDest(linktext, sourcePath);
+    } catch (e) {
+      target = null;
+    }
+    if (!target) return;
+
+    const here = all.find((e) => e.file.path === target.path);
+    const entries = here ? all.filter((e) => e.line === here.line) : [];
+    if (!entries.length) return;
+
+    new LinknoteSheet(this.app, this, file, entries).open();
   }
 
   /** Stows the cards, or brings them back. */
@@ -1850,6 +2042,75 @@ class LinknotePlugin extends Plugin {
 /* --------------------------------------------------------------------------
  * Composer modal
  * ------------------------------------------------------------------------ */
+
+/**
+ * The linknotes of whatever note is in front, listed in the order they appear
+ * in it. The cards answer "what is written here"; this answers "what has been
+ * written about this note, and where". On a phone it is the only answer, since
+ * cards there have nowhere to go.
+ */
+class LinknoteListView extends ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+  }
+
+  getViewType() {
+    return LIST_VIEW_TYPE;
+  }
+
+  getDisplayText() {
+    return 'Linknotes';
+  }
+
+  getIcon() {
+    return 'message-square';
+  }
+
+  async onOpen() {
+    this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.draw()));
+    this.registerEvent(this.app.workspace.on('file-open', () => this.draw()));
+    this.registerEvent(this.app.metadataCache.on('changed', () => this.draw()));
+    await this.draw();
+  }
+
+  async draw() {
+    const el = this.contentEl;
+    el.addClass('lkn-list');
+
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      el.empty();
+      el.createDiv({ cls: 'lkn-list-empty', text: 'No note is open.' });
+      return;
+    }
+
+    const entries = await this.plugin.linknotesOf(file);
+    await this.plugin.renderLinknoteRows(el, file, entries);
+  }
+}
+
+/** One block's linknotes, as a sheet. What a marker opens on a phone. */
+class LinknoteSheet extends Modal {
+  constructor(app, plugin, sourceFile, entries) {
+    super(app);
+    this.plugin = plugin;
+    this.sourceFile = sourceFile;
+    this.entries = entries;
+  }
+
+  onOpen() {
+    this.modalEl.addClass('lkn-sheet');
+    this.contentEl.empty();
+    this.contentEl.createEl('h3', { text: 'Linknotes' });
+    const list = this.contentEl.createDiv({ cls: 'lkn-list' });
+    this.plugin.renderLinknoteRows(list, this.sourceFile, this.entries);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
 
 class LinknoteModal extends Modal {
   constructor(app, plugin, snap, onSubmit) {
@@ -2459,6 +2720,7 @@ module.exports.shortenTitle = shortenTitle;
 module.exports.toYamlBlock = toYamlBlock;
 module.exports.stripFrontmatter = stripFrontmatter;
 module.exports.sectionUnderHeading = sectionUnderHeading;
+module.exports.anchorExcerpt = anchorExcerpt;
 module.exports.toggleTaskLine = toggleTaskLine;
 module.exports.tagQueryAt = tagQueryAt;
 module.exports.applyTagPick = applyTagPick;

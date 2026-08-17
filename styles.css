@@ -537,3 +537,64 @@ body.lkn-cards-collapsed .lkn-card-stack.lkn-card-inline .lkn-card {
 body.lkn-cards-collapsed .lkn-card:hover {
   opacity: 1;
 }
+
+/* Linknote — the list in the sidebar, and the sheet a marker opens */
+.lkn-list {
+  padding: 4px 0;
+}
+
+.lkn-list .lkn-list-empty {
+  padding: 12px 10px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.lkn-list .lkn-list-item {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  border-left: 2px solid var(--interactive-accent);
+  background-color: var(--background-secondary);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.lkn-list .lkn-list-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+/* The passage the note is attached to, which also jumps to it. */
+.lkn-list .lkn-list-passage {
+  color: var(--text-muted);
+  margin-top: 2px;
+  border-left: 2px solid var(--background-modifier-border);
+  padding-left: 8px;
+  margin-bottom: 4px;
+}
+
+.lkn-list .lkn-list-passage:hover {
+  color: var(--text-accent);
+  border-left-color: var(--interactive-accent);
+}
+
+.lkn-list .lkn-list-meta {
+  color: var(--text-faint);
+  font-size: 0.9em;
+  margin-bottom: 2px;
+}
+
+.lkn-list .lkn-list-passage + .lkn-list-body,
+.lkn-list .lkn-list-meta + .lkn-list-body {
+  margin-top: 6px;
+}
+
+.lkn-list .lkn-list-body {
+  color: var(--text-normal);
+  white-space: pre-wrap;
+}
+
+body.is-mobile .lkn-sheet {
+  max-height: 70vh;
+}

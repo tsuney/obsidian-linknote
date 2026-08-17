@@ -111,11 +111,17 @@ Two exceptions. A heading takes the marker into its own line and gets no rule, s
 
 Both are drawn as the note is rendered. **Nothing extra is written to your notes**, and turning either off restores the plain look immediately.
 
+### The list in the sidebar
+
+**Show the linknotes in this note** — from the command palette, or the ribbon icon — opens a list of every linknote the note in front carries, in the order they appear in it. Each row is headed by who wrote it and when, then the passage it is attached to, then the note itself. Pressing the passage goes to it; pressing the row opens the linknote.
+
+The cards answer "what is written here". The list answers "what has been written about this note, and where". On a phone it is the main answer, since a card has nowhere to go there.
+
 ### Cards
 
 Turn on **Show linknotes as cards** and each linknote is drawn beside the passage it annotates, headed by who wrote it and when. That line opens the full note; hovering it shows the file name.
 
-A margin note needs a margin, and Obsidian does not leave one: the text column is centred with 70–150px either side, which no card fits into. So a note that carries cards has its text column narrowed and pushed left, and the cards live in the space that frees. That is what a margin note costs, and it applies only to notes that have linknotes. Where the pane is too narrow to afford it, and on a phone, the cards go under the block they belong to instead; **Card placement** can be set to that inline form permanently.
+A margin note needs a margin, and Obsidian does not leave one: the text column is centred with 70–150px either side, which no card fits into. So a note that carries cards has its text column narrowed and pushed left, and the cards live in the space that frees. That is what a margin note costs, and it applies only to notes that have linknotes. Where the pane is too narrow to afford it the cards go under the block they belong to instead, and **Card placement** can be set to that inline form permanently. **On a phone there are no cards at all**: there is no margin to use, and inline cards interrupt the reading. Tapping a marker there opens a sheet with that block's linknotes.
 
 The cards of one block are gathered behind a single rail. Where a group has to be pushed down to clear the one above it, a thin line traces the distance back up to the block it belongs to. A block shows three cards at a time and a card shows six lines, both settings; the rest is reached by scrolling.
 
@@ -197,6 +203,15 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.13.1
+
+- The rows in the sidebar are headed by the author and date, with the passage below. A linknote on a heading has no passage to quote, so that row was headed differently from the rest; a heading anchor now shows the heading itself.
+
+### 0.13.0
+
+- **A list in the sidebar.** Every linknote the note in front carries, in the order they appear in it, with the passage each is attached to. Pressing the passage goes to it; pressing the row opens the note. Opened from the ribbon or from **Show the linknotes in this note**.
+- **On a phone, tapping a marker opens a sheet** with that block's linknotes, and cards are not drawn at all. A margin card has no margin to use there, and an inline card interrupts the reading.
 
 ### 0.12.10
 
