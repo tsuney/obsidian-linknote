@@ -172,8 +172,10 @@ async function main() {
     eq(
       'the linknote renders the default template',
       note,
-      '---\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook#^' + id + ']]"\n---\n\n' +
-        '> [!NOTE]+ Close date\n> Confirmed with Finance.\n'
+      '---\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook#^' + id + ']]"\n' +
+        'author:\nbody: |-\n  Confirmed with Finance.\n---\n\n' +
+        '> [!NOTE]- Close date\n> the tenth business day\n\n' +
+        '## Linknote\n\nConfirmed with Finance.\n'
     );
     check('the other paragraph was left alone', source.includes('\nExpenses are filed weekly.\n'));
   }
@@ -628,11 +630,13 @@ async function main() {
     eq('the block ID is used', result.file.path, 'Linknotes/Doc_' + result.blockId + '.md');
   }
 
-  console.log('\n21. the shipped default keeps a multi-line note inside the callout');
+  console.log('\n21. the callout preset keeps a multi-line note inside the callout');
   {
     const src = 'Doc.md';
     const app = makeApp({ [src]: 'A paragraph to annotate.\n' });
-    const p = makePlugin(app, {});
+    const p = makePlugin(app, {
+      noteTemplate: require(path.join(__dirname, '..', 'main.js')).CALLOUT_NOTE_TEMPLATE,
+    });
     await p.loadSettings();
     const snap = makeSnapshot(app, src, 'A paragraph to annotate.', 0, 0);
     const { file } = await p.createLinknote(snap, {

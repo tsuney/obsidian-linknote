@@ -208,6 +208,115 @@ eq('collapses runs left by empty variables', tidy('a\n\n\n\n\nb'), 'a\n\nb\n');
 eq('drops trailing spaces before newlines', tidy('a   \nb'), 'a\nb\n');
 eq('trims and ends with a single newline', tidy('\n\n  a  \n\n\n'), 'a\n');
 
+console.log('\na note as a YAML property value');
+eq('empty stays empty, not "|-"', m.toYamlBlock(''), '');
+eq('whitespace only stays empty', m.toYamlBlock('   \n  '), '');
+eq('one line becomes a block scalar', m.toYamlBlock('just this'), '|-\n  just this');
+eq('several lines keep their breaks', m.toYamlBlock('one\ntwo'), '|-\n  one\n  two');
+// Written flat, either of these would make the frontmatter invalid.
+eq('a colon is safe inside a block scalar', m.toYamlBlock('note: see this'), '|-\n  note: see this');
+eq('a hash is safe too', m.toYamlBlock('see #tag'), '|-\n  see #tag');
+eq('the indent can be set', m.toYamlBlock('one', '    '), '|-\n    one');
+{
+  const rendered = tidy(renderTemplate('body: {{bodyYaml}}\nnext: 1\n', { bodyYaml: m.toYamlBlock('one\ntwo') }));
+  eq('it drops into a template as valid YAML', rendered, 'body: |-\n  one\n  two\nnext: 1\n');
+}
+
+console.log('\nfinding the section a linknote calls its body');
+{
+  const note = [
+    '---', 'body: old', '---', '',
+    '> [!NOTE]- Quoted', '> the passage', '',
+    '## Linknote', '',
+    '- [ ] a task', 'and a line', '',
+    '## Elsewhere', '', 'not this',
+  ].join('\n');
+  eq('the section under the heading is returned',
+    m.sectionUnderHeading(note, 'Linknote'), '- [ ] a task\nand a line');
+  eq('it stops at the next heading of the same level',
+    m.sectionUnderHeading(note, 'Linknote').includes('not this'), false);
+  eq('a heading that is not there gives nothing', m.sectionUnderHeading(note, 'Missing'), '');
+  eq('an empty heading name gives nothing', m.sectionUnderHeading(note, ''), '');
+}
+{
+  const note = '## Linknote\n\nkeep\n\n### Deeper\n\nalso keep\n\n# Top\n\nstop';
+  eq('a deeper heading stays inside the section',
+    m.sectionUnderHeading(note, 'Linknote'), 'keep\n\n### Deeper\n\nalso keep');
+}
+{
+  // A # inside a fenced block is not a heading.
+  const note = '## Linknote\n\n```bash\n# not a heading\n## nor this\n```\n\ntail\n\n## Next\n\nno';
+  eq('fenced code is skipped',
+    m.sectionUnderHeading(note, 'Linknote'), '```bash\n# not a heading\n## nor this\n```\n\ntail');
+}
+eq('a trailing block ID on the heading is ignored',
+  m.sectionUnderHeading('## Linknote ^abc123\n\nthe note', 'Linknote'), 'the note');
+eq('the last section runs to the end',
+  m.sectionUnderHeading('## Linknote\n\nthe note', 'Linknote'), 'the note');
+eq('an empty section is empty', m.sectionUnderHeading('## Linknote\n\n## Next\n\nx', 'Linknote'), '');
+
+console.log('\nreading a note back without its frontmatter');
+eq('frontmatter is removed', m.stripFrontmatter('---\na: 1\n---\n\nThe note.\n'), 'The note.');
+eq('a note without frontmatter is returned whole', m.stripFrontmatter('The note.\n'), 'The note.');
+eq('a stray --- inside the body survives', m.stripFrontmatter('---\na: 1\n---\n\nOne\n\n---\n\nTwo\n'), 'One\n\n---\n\nTwo');
+eq('an unterminated block is left alone', m.stripFrontmatter('---\nnot closed\n'), '---\nnot closed');
+eq('empty in, empty out', m.stripFrontmatter(''), '');
+
+console.log('\nturning the line under the caret into a task');
+{
+  const r = m.toggleTaskLine('write it up', 5);
+  eq('a plain line gains a task marker', r.text, '- [ ] write it up');
+  eq('the caret follows the text', r.cursor, 11);
+}
+eq('the marker comes off again', m.toggleTaskLine('- [ ] write it up', 8).text, 'write it up');
+eq('a checked marker comes off too', m.toggleTaskLine('- [x] done', 8).text, 'done');
+eq('a bullet becomes a task', m.toggleTaskLine('- an item', 4).text, '- [ ] an item');
+eq('indentation is kept', m.toggleTaskLine('  nested', 4).text, '  - [ ] nested');
+{
+  const text = 'first\nsecond\nthird';
+  eq('only the line under the caret changes',
+    m.toggleTaskLine(text, 8).text, 'first\n- [ ] second\nthird');
+}
+
+console.log('\nthe tag being typed at the caret');
+eq('nothing outside a tag', m.tagQueryAt('plain text', 5), null);
+{
+  const r = m.tagQueryAt('see #pro', 8);
+  eq('the query is what follows the hash', r.query, 'pro');
+  eq('the range starts at the hash', r.start, 4);
+  eq('and ends at the caret', r.end, 8);
+}
+eq('a bare hash gives an empty query', m.tagQueryAt('see #', 5).query, '');
+eq('a hash at the start of the note counts', m.tagQueryAt('#pro', 4).query, 'pro');
+eq('a hash mid-word is not a tag', m.tagQueryAt('a#b', 3), null);
+eq('the caret must be inside the tag', m.tagQueryAt('#one two', 8), null);
+{
+  const r = m.applyTagPick('see #pro', m.tagQueryAt('see #pro', 8), 'project/alpha');
+  eq('the picked tag replaces what was typed', r.text, 'see #project/alpha ');
+  eq('the caret lands after it', r.cursor, 19);
+}
+eq('a leading hash on the pick is not doubled',
+  m.applyTagPick('see #pro', m.tagQueryAt('see #pro', 8), '#project').text, 'see #project ');
+
+console.log('\ncollecting the vault tags');
+eq('inline and property tags are merged and sorted',
+  m.collectTags([
+    { tags: [{ tag: '#beta' }, { tag: '#alpha' }] },
+    { frontmatter: { tags: ['gamma', '#alpha'] } },
+    null,
+    {},
+  ]).join(','), 'alpha,beta,gamma');
+eq('a string property is split', m.collectTags([{ frontmatter: { tags: 'one two' } }]).join(','), 'one,two');
+eq('nothing in, nothing out', m.collectTags([]).length, 0);
+
+console.log('\nfiltering the tag list');
+const TAGS = ['alpha', 'alphabet', 'beta', 'project/alpha'];
+eq('an empty query offers everything', m.filterTags(TAGS, '').length, 4);
+eq('prefix matches come first', m.filterTags(TAGS, 'alpha').join(','), 'alpha,alphabet,project/alpha');
+eq('matching ignores case', m.filterTags(TAGS, 'ALPHAB').join(','), 'alphabet');
+eq('the list is capped', m.filterTags(TAGS, '', 2).length, 2);
+eq('no match, no rows', m.filterTags(TAGS, 'zzz').length, 0);
+
 console.log('\nshortening a title for a heading');
 eq('short titles are untouched', m.shortenTitle('Close date'), 'Close date');
 eq('whitespace is collapsed first', m.shortenTitle('Close   date\n again'), 'Close date again');
@@ -232,35 +341,42 @@ eq('everything empty leaves nothing', m.tidyFileName('_'), '');
 console.log('\nthe shipped default template');
 {
   const vars = {
-    date: '2026-08-12',
+    date: '2026-08-12', time: '09:05',
     sourceBlock: '[[Team handbook#^k3n8v1]]',
+    author: 'A. Reader',
+    bodyYaml: m.toYamlBlock('Confirmed with Finance.\nTwice.'),
+    summary: 'Team handbook — the tenth business day',
+    selectionQuote: '> the tenth business day',
     titleShort: 'Close is the tenth business day',
-    bodyQuote: '> Confirmed with Finance.\n> Twice.',
+    body: 'Confirmed with Finance.\nTwice.',
   };
   eq(
-    'renders a callout that holds every line of the note',
+    'renders frontmatter, the folded source and the note',
     tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars)),
-    '---\ncreated: 2026-08-12\nsource: "[[Team handbook#^k3n8v1]]"\n---\n\n' +
-      '> [!NOTE]+ Close is the tenth business day\n' +
-      '> Confirmed with Finance.\n' +
-      '> Twice.\n'
+    '---\ncreated: 2026-08-12 09:05\nsource: "[[Team handbook#^k3n8v1]]"\nauthor: A. Reader\n' +
+      'body: |-\n  Confirmed with Finance.\n  Twice.\n---\n\n' +
+      '> [!NOTE]- Close is the tenth business day\n> the tenth business day\n\n' +
+      '## Linknote\n\nConfirmed with Finance.\nTwice.\n'
   );
 }
 
-console.log('\nthe shipped default with an empty note');
+console.log('\nthe shipped default with an empty note and no author');
 {
   const vars = {
-    date: '2026-08-12',
+    date: '2026-08-12', time: '09:05',
     sourceBlock: '[[Team handbook]]',
+    author: '',
+    bodyYaml: '',
+    summary: 'Team handbook — the tenth business day',
+    selectionQuote: '> the tenth business day',
     titleShort: 'Close date',
-    bodyQuote: '',
+    body: '',
   };
-  eq(
-    'no stray blank line inside the callout',
-    tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars)),
-    '---\ncreated: 2026-08-12\nsource: "[[Team handbook]]"\n---\n\n' +
-      '> [!NOTE]+ Close date\n'
-  );
+  const out = tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars));
+  // Empty properties are valid YAML nulls; what matters is that nothing dangles.
+  check('the empty properties are left as nulls', out.includes('\nauthor:\nbody:\n'), '    out: ' + out);
+  check('the frontmatter still closes', out.split('---\n').length >= 3, '    out: ' + out);
+  check('no unresolved variable', !/\{\{[a-z]/i.test(out), '    out: ' + out);
 }
 
 console.log('\nreplacing the block inside the whole note');
@@ -280,9 +396,9 @@ console.log('\ntemplate presets');
     sourcePath: 'Team handbook.md', sourceBlock: '[[Team handbook#^k3n8v1]]', title: 'Close date', body: 'Confirmed.', selection: 'the tenth business day',
     selectionQuote: '> the tenth business day', embed: '![[Team handbook#^k3n8v1]]', blockId: 'k3n8v1',
     author: 'A. Reader', summary: 'Team handbook — the tenth business day',
-    titleShort: 'Close date', bodyQuote: '> Confirmed.',
+    titleShort: 'Close date', bodyQuote: '> Confirmed.', bodyYaml: '|-\n  Confirmed.',
   };
-  eq('four presets ship', TEMPLATE_PRESETS.length, 4);
+  eq('five presets ship', TEMPLATE_PRESETS.length, 5);
   for (const preset of TEMPLATE_PRESETS) {
     const embedAt = preset.template.indexOf('{{embed}}');
     if (embedAt === -1) continue;   // the callout preset carries no embed

@@ -281,3 +281,259 @@ body.is-mobile .markdown-rendered li.lkn-anchored::before {
   vertical-align: middle;
   margin-left: 0.4em;
 }
+
+/* Linknote — composer toolbar and tag picker */
+.lkn-modal .lkn-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lkn-modal .lkn-tools {
+  display: flex;
+  gap: 6px;
+}
+
+.lkn-modal button.lkn-tool {
+  padding: 2px 10px;
+  font-size: var(--font-ui-smaller);
+  line-height: 1.6;
+  height: auto;
+  box-shadow: none;
+}
+
+.lkn-modal .lkn-suggest {
+  position: relative;
+  margin-top: -6px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  z-index: var(--layer-menu, 50);
+}
+
+.lkn-modal .lkn-suggest-item {
+  padding: 5px 10px;
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.lkn-modal .lkn-suggest-item.is-active,
+.lkn-modal .lkn-suggest-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+/*
+ * Linknote — cards beside the annotated block.
+ *
+ * The margin position is the point of the feature, but it only works when the
+ * window actually leaves room to the right of the text column. fitCard()
+ * measures that and falls back to lkn-card-inline, which is also what mobile
+ * always gets.
+ */
+.markdown-preview-view .lkn-has-card,
+.markdown-rendered .lkn-has-card {
+  position: relative;
+}
+
+/*
+ * The gutter. Obsidian centres the text column and leaves too little either
+ * side for a card, so when a note carries cards the column is narrowed and
+ * pushed left, and the cards live in what that frees. fitCard() adds
+ * .lkn-cards only where the pane is wide enough to afford it.
+ */
+.markdown-preview-view.lkn-cards {
+  /*
+   * Padding on the scroller is what actually reserves the gutter. Narrowing
+   * the sizer instead depends on a rule that themes and the readable-line-width
+   * setting both override, and when it loses the cards land off screen.
+   */
+  padding-right: var(--lkn-card-gutter, 280px);
+}
+
+.markdown-preview-view.lkn-cards .markdown-preview-sizer {
+  /* Collect the free space on the right rather than splitting it either side. */
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/*
+ * The stack is what is positioned, not the card. Positioning each card put
+ * every card on a block at the same spot, one on top of the other.
+ */
+.markdown-preview-view .lkn-card-stack,
+.markdown-rendered .lkn-card-stack {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 24px;
+  width: var(--lkn-card-width, 240px);
+  box-sizing: border-box;
+  padding-left: 10px;
+  border-left: 2px solid var(--interactive-accent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/*
+ * A stack pushed down to clear the one above it no longer sits beside its own
+ * block. This traces the distance it moved, so the block it belongs to can be
+ * followed up the line. Nothing is drawn when it did not move.
+ *
+ * Drawn on the block rather than on the stack: a stack that scrolls clips
+ * anything outside it, and the line lives above its top edge.
+ */
+.markdown-preview-view .lkn-has-card::after,
+.markdown-rendered .lkn-has-card::after {
+  content: '';
+  position: absolute;
+  left: calc(100% + 22px);
+  top: 0;
+  height: var(--lkn-shift, 0px);
+  width: 2px;
+  background-color: var(--interactive-accent);
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* Beyond the shown count, the rest of a block's cards are scrolled to. */
+.markdown-preview-view .lkn-card-stack.lkn-stack-scroll,
+.markdown-rendered .lkn-card-stack.lkn-stack-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.markdown-preview-view .lkn-card,
+.markdown-rendered .lkn-card {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+  font-size: calc(var(--font-ui-smaller) * var(--lkn-card-scale, 1));
+  color: var(--lkn-card-color, var(--text-normal));
+  line-height: 1.5;
+}
+
+.markdown-preview-view .lkn-card-stack.lkn-card-inline,
+.markdown-rendered .lkn-card-stack.lkn-card-inline {
+  position: static;
+  width: auto;
+  margin: 8px 0;
+  padding-left: 8px;
+}
+
+.markdown-preview-view .lkn-card-stack.lkn-card-inline::before,
+.markdown-rendered .lkn-card-stack.lkn-card-inline::before {
+  content: none;
+}
+
+/* A long note would otherwise run down over the cards of the blocks below. */
+.lkn-card .lkn-card-body {
+  max-height: calc(var(--lkn-card-lines, 6) * 1.5em);
+  overflow-y: auto;
+}
+
+.lkn-card .lkn-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.lkn-card .lkn-card-title {
+  color: var(--text-faint);
+  font-size: 0.9em;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lkn-card .lkn-card-title:hover {
+  color: var(--text-accent);
+}
+
+.lkn-card .lkn-card-body > :first-child {
+  margin-top: 0;
+}
+
+.lkn-card .lkn-card-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* The button that stows every card away. */
+.lkn-card .lkn-card-stow {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  height: auto;
+  line-height: 1.2;
+  font-size: 1.1em;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.lkn-card .lkn-card-stow:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+/*
+ * Stowed. The card keeps its place beside the block but shrinks to a strip,
+ * so the passages that carry a note are still visible and any strip brings
+ * them all back. The gutter stays, so nothing reflows on the way back.
+ */
+body.lkn-cards-collapsed .lkn-card {
+  cursor: pointer;
+}
+
+body.lkn-cards-collapsed .lkn-card > * {
+  display: none;
+}
+
+/* Stowed, the strips need almost nothing, so the text takes the room back. */
+body.lkn-cards-collapsed .markdown-preview-view.lkn-cards {
+  padding-right: 26px;
+}
+
+body.lkn-cards-collapsed .markdown-preview-view .lkn-card-stack:not(.lkn-card-inline),
+body.lkn-cards-collapsed .markdown-rendered .lkn-card-stack:not(.lkn-card-inline) {
+  width: 8px;
+  margin-left: 12px;
+  padding-left: 0;
+  border-left: none;
+  gap: 3px;
+}
+
+body.lkn-cards-collapsed .markdown-preview-view .lkn-card-stack:not(.lkn-card-inline) .lkn-card,
+body.lkn-cards-collapsed .markdown-rendered .lkn-card-stack:not(.lkn-card-inline) .lkn-card {
+  min-height: 1.4em;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background-color: var(--interactive-accent);
+  opacity: 0.55;
+}
+
+body.lkn-cards-collapsed .lkn-card-stack.lkn-card-inline .lkn-card {
+  display: block;
+  width: 48px;
+  height: 6px;
+  min-height: 0;
+  margin: 6px 0;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background-color: var(--interactive-accent);
+  opacity: 0.55;
+}
+
+body.lkn-cards-collapsed .lkn-card:hover {
+  opacity: 1;
+}
