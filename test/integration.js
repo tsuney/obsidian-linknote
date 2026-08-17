@@ -53,10 +53,15 @@ function makeApp(files) {
   const handles = new Map();
   for (const p of store.keys()) handles.set(p, new FakeFile(p));
 
+  const trashed = [];
+
   return {
     _store: store,
+    _trashed: trashed,
+    _handle: (p) => handles.get(p),
     vault: {
       getAbstractFileByPath: (p) => handles.get(p) || (folders.has(p) ? { path: p, children: [] } : null),
+      getMarkdownFiles: () => Array.from(handles.values()),
       read: async (f) => store.get(f.path),
       create: async (p, content) => {
         if (store.has(p)) throw new Error('already exists: ' + p);
@@ -76,19 +81,35 @@ function makeApp(files) {
       // Mirrors Obsidian's shortest-path wikilink output.
       generateMarkdownLink: (file, sourcePath, subpath, alias) =>
         '[[' + file.basename + (subpath || '') + (alias ? '|' + alias : '') + ']]',
+      trashFile: async (f) => {
+        if (!store.has(f.path)) throw new Error('no such file: ' + f.path);
+        store.delete(f.path);
+        handles.delete(f.path);
+        trashed.push(f.path);
+      },
     },
     workspace: {
       getLeaf: () => ({ openFile: async () => {} }),
     },
     metadataCache: {
       _blocks: new Map(),   // path -> Set of block ids
+      _links: new Map(),    // path -> array of link targets, as written
       _handlers: [],
+      getFirstLinkpathDest(target, from) {
+        return handles.get(target + '.md') || handles.get(target) || null;
+      },
       getFileCache(f) {
         const ids = this._blocks.get(f.path);
-        if (!ids) return null;
+        const links = this._links.get(f.path);
+        if (!ids && !links) return null;
         const blocks = {};
-        for (const id of ids) blocks[id] = { id };
-        return { blocks };
+        for (const id of ids || []) blocks[id] = { id };
+        return { blocks, links: (links || []).map((link) => ({ link })) };
+      },
+      /** Pretends another note in the vault links somewhere. */
+      indexLink(file, target) {
+        if (!this._links.has(file.path)) this._links.set(file.path, []);
+        this._links.get(file.path).push(target);
       },
       on(name, cb) {
         const ref = { name, cb };
@@ -682,6 +703,81 @@ async function main() {
     const id = source.match(/\^([a-z0-9]{6})/)[1];
     eq('the paragraph was found and anchored', source,
       '# Doc\n\n' + para + ' [[Bold para|†]] ^' + id + '\n');
+  }
+
+  console.log('\n25. removing a linknote puts the source back as it was');
+  {
+    const src = 'Team handbook.md';
+    const before = '# Team handbook\n\nWe review the roster every quarter.\n';
+    const app = makeApp({ [src]: before });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'roster', 2, 2);
+    const made = await p.createLinknote(snap, { title: 'Roster', body: 'why quarterly' });
+
+    check('the source carries a marker first', app._store.get(src) !== before);
+    const plan = await p.planRemoval(made.sourceFile, made.file);
+    check('a plan was made', plan.ok === true, '    reason: ' + plan.reason);
+    check('the block ID goes too, nothing else points at it', plan.dropBlockId === true);
+    const done = await p.applyRemoval(plan);
+    check('the removal reported success', done === true);
+    eq('the source reads exactly as it did', app._store.get(src), before);
+    eq('the note was trashed', app._trashed[0], made.file.path);
+    check('the note is gone from the vault', !app._store.has(made.file.path));
+  }
+
+  console.log('\n26. a block ID another note points at is left alone');
+  {
+    const src = 'Team handbook.md';
+    const other = 'Elsewhere.md';
+    const before = '# Team handbook\n\nWe review the roster every quarter.\n';
+    const app = makeApp({ [src]: before, [other]: 'See [[Team handbook#^keepme]].\n' });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'roster', 2, 2);
+    const made = await p.createLinknote(snap, { title: 'Roster', body: 'why quarterly' });
+    const id = app._store.get(src).match(/\^([a-z0-9]{6})/)[1];
+    app.metadataCache.indexLink(app._handle(other), 'Team handbook#^' + id);
+
+    const plan = await p.planRemoval(made.sourceFile, made.file);
+    check('a plan was made', plan.ok === true, '    reason: ' + plan.reason);
+    check('the block ID stays', plan.dropBlockId === false);
+    await p.applyRemoval(plan);
+    eq('the line keeps its ID and loses only the marker', app._store.get(src),
+      '# Team handbook\n\nWe review the roster every quarter. ^' + id + '\n');
+  }
+
+  console.log('\n27. two markers for the same note: refuse rather than guess');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({
+      [src]: 'One [[Side note|†]] here.\n\nTwo [[Side note|†]] there.\n',
+      'Linknotes/Side note.md': '# Side note\n',
+    });
+    const p = makePlugin(app, {});
+    await p.loadSettings();
+    const plan = await p.planRemoval(app._handle(src), app._handle('Linknotes/Side note.md'));
+    check('the plan refuses', plan.ok === false);
+    eq('and says why', plan.reason, 'ambiguous');
+    check('nothing was trashed', app._trashed.length === 0);
+  }
+
+  console.log('\n28. the source changed while the confirmation was open');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({
+      [src]: 'One [[Side note|†]] here.\n',
+      'Linknotes/Side note.md': '# Side note\n',
+    });
+    const p = makePlugin(app, {});
+    await p.loadSettings();
+    const plan = await p.planRemoval(app._handle(src), app._handle('Linknotes/Side note.md'));
+    check('a plan was made', plan.ok === true, '    reason: ' + plan.reason);
+    app._store.set(src, 'One [[Side note|†]] here, edited.\n');
+    const done = await p.applyRemoval(plan);
+    check('the removal declined', done === false);
+    eq('the edit survives untouched', app._store.get(src), 'One [[Side note|†]] here, edited.\n');
+    check('nothing was trashed', app._trashed.length === 0);
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

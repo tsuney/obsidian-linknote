@@ -222,6 +222,79 @@ eq('the indent can be set', m.toYamlBlock('one', '    '), '|-\n    one');
   eq('it drops into a template as valid YAML', rendered, 'body: |-\n  one\n  two\nnext: 1\n');
 }
 
+console.log('\ntaking a linknote back out — reading a link');
+eq('an alias is dropped', m.normaliseLinkTarget('Linknotes/Foo|†'), 'Linknotes/Foo');
+eq('a subpath is dropped', m.normaliseLinkTarget('Foo#^abc123'), 'Foo');
+eq('an extension is dropped', m.normaliseLinkTarget('Linknotes/Foo.md'), 'Linknotes/Foo');
+eq('percent escapes are decoded', m.normaliseLinkTarget('Linknotes/Foo%20Bar.md'), 'Linknotes/Foo Bar');
+eq('the names of a note', m.linkNamesFor('Linknotes/Foo.md').join('|'), 'Linknotes/Foo|Foo');
+
+console.log('\ntaking a linknote back out — one line');
+const NAMES = m.linkNamesFor('Linknotes/Note_abc123.md');
+{
+  const r = m.removeLinkFromLine('A sentence. [[Note_abc123|†]] ^abc123', NAMES);
+  eq('the marker and its space go', r.line, 'A sentence. ^abc123');
+  check('and it says so', r.removed);
+}
+eq('a full path is matched too',
+  m.removeLinkFromLine('A sentence. [[Linknotes/Note_abc123|†]]', NAMES).line, 'A sentence.');
+eq('a markdown link is matched',
+  m.removeLinkFromLine('A sentence. [†](Linknotes/Note_abc123.md)', NAMES).line, 'A sentence.');
+eq('an escaped markdown link is matched',
+  m.removeLinkFromLine('A sentence. [†](Linknotes/Note_abc123.md)', m.linkNamesFor('Linknotes/Note_abc123.md')).line,
+  'A sentence.');
+{
+  // A link to something else must not be touched.
+  const r = m.removeLinkFromLine('See [[Another note]] here.', NAMES);
+  eq('an unrelated link is left alone', r.line, 'See [[Another note]] here.');
+  check('and nothing is reported', !r.removed);
+}
+eq('only the first match goes',
+  m.removeLinkFromLine('[[Note_abc123|†]] and [[Note_abc123|†]]', NAMES).line, ' and [[Note_abc123|†]]');
+eq('the block ID is read back', m.blockIdOfLine('A sentence. ^abc123'), 'abc123');
+eq('no block ID, no answer', m.blockIdOfLine('A sentence.'), '');
+
+console.log('\ntaking a linknote back out — the whole note');
+{
+  const doc = '# Doc\n\nA sentence. [[Note_abc123|†]] ^abc123\n\nAnother.\n';
+  const r = m.removeAnchor(doc, NAMES, false);
+  check('it succeeds', r.ok);
+  eq('the block ID is reported', r.blockId, 'abc123');
+  eq('the marker goes and the ID stays', r.content, '# Doc\n\nA sentence. ^abc123\n\nAnother.\n');
+}
+{
+  const doc = '# Doc\n\nA sentence. [[Note_abc123|†]] ^abc123\n\nAnother.\n';
+  eq('the ID goes when asked', m.removeAnchor(doc, NAMES, true).content,
+    '# Doc\n\nA sentence.\n\nAnother.\n');
+}
+{
+  // A heading takes the marker on a line of its own; the line goes with it.
+  const doc = '# Doc\n\n## Background\n\n[[Note_abc123|†]]\n\nSome text.\n';
+  const r = m.removeAnchor(doc, NAMES, false);
+  check('it succeeds', r.ok);
+  eq('the line goes, and one of its blank lines', r.content, '# Doc\n\n## Background\n\nSome text.\n');
+}
+{
+  const doc = '# Doc\n\nA sentence.\n';
+  const r = m.removeAnchor(doc, NAMES, false);
+  check('a marker that is not there is refused', !r.ok);
+  eq('and says why', r.reason, 'not-found');
+  eq('leaving the note alone', r.content, null);
+}
+{
+  const doc = 'One. [[Note_abc123|†]]\n\nTwo. [[Note_abc123|†]]\n';
+  const r = m.removeAnchor(doc, NAMES, false);
+  check('two markers to the same note are refused', !r.ok);
+  eq('and says why', r.reason, 'ambiguous');
+  eq('leaving the note alone', r.content, null);
+}
+{
+  // The rest of the line must survive intact, markup and all.
+  const doc = '- [ ] **bold** and `code` [[Note_abc123|†]] ^abc123\n';
+  eq('the passage is untouched', m.removeAnchor(doc, NAMES, true).content,
+    '- [ ] **bold** and `code`\n');
+}
+
 console.log('\nfinding the section a linknote calls its body');
 {
   const note = [

@@ -365,6 +365,98 @@ function anchorExcerpt(line, max) {
   return shortenTitle(normalizeInline(bare), max || 60);
 }
 
+/* --------------------------------------------------------------------------
+ * Taking a linknote back out (pure functions — covered by tests)
+ * ------------------------------------------------------------------------ */
+
+/** A link target reduced to something comparable: no subpath, alias or .md. */
+function normaliseLinkTarget(text) {
+  let value = String(text == null ? '' : text).split('|')[0].split('#')[0].trim();
+  try {
+    value = decodeURIComponent(value);
+  } catch (e) {
+    /* left as written */
+  }
+  return value.replace(/^<|>$/g, '').replace(/^\.\//, '').replace(/\.md$/i, '').trim();
+}
+
+/** The names a link to one particular note might be written as. */
+function linkNamesFor(path) {
+  const clean = String(path == null ? '' : path).replace(/\.md$/i, '');
+  const base = clean.split('/').pop();
+  return Array.from(new Set([clean, base].filter(Boolean)));
+}
+
+const WIKILINK_RE = /!?\[\[([^\]]+)\]\]/g;
+const MDLINK_RE = /!?\[[^\]]*\]\(([^)]+)\)/g;
+
+/**
+ * Removes the first link to one of `names` from a line, along with the space
+ * that separated it. Reports whether anything was found, so the caller can
+ * refuse rather than write a line it did not recognise.
+ */
+function removeLinkFromLine(line, names) {
+  const value = String(line == null ? '' : line);
+  const wanted = (names || []).map(normaliseLinkTarget);
+
+  for (const re of [WIKILINK_RE, MDLINK_RE]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(value)) !== null) {
+      if (wanted.indexOf(normaliseLinkTarget(m[1])) === -1) continue;
+      const before = value.slice(0, m.index).replace(/[ \t]+$/, '');
+      const after = value.slice(m.index + m[0].length);
+      return { line: before + after, removed: true };
+    }
+  }
+  return { line: value, removed: false };
+}
+
+/** The block ID at the end of a line, without the caret. */
+function blockIdOfLine(line) {
+  const m = String(line == null ? '' : line).match(BLOCK_ID_RE);
+  return m ? m[1] : '';
+}
+
+function stripBlockIdFromLine(line) {
+  return String(line == null ? '' : line).replace(BLOCK_ID_RE, '');
+}
+
+/**
+ * Takes a linknote's marker out of the note it annotates.
+ *
+ * Refuses rather than guesses, on the same terms as writing: the marker has
+ * to be found, and found once. A line left holding nothing goes with it —
+ * that is the heading case, where the marker sits on a line of its own.
+ */
+function removeAnchor(content, names, dropBlockId) {
+  const lines = String(content == null ? '' : content).split('\n');
+  const hits = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (removeLinkFromLine(lines[i], names).removed) hits.push(i);
+  }
+
+  if (!hits.length) return { ok: false, reason: 'not-found', content: null, blockId: '' };
+  if (hits.length > 1) return { ok: false, reason: 'ambiguous', content: null, blockId: '' };
+
+  const at = hits[0];
+  const stripped = removeLinkFromLine(lines[at], names).line;
+  const blockId = blockIdOfLine(stripped);
+  const next = (dropBlockId && blockId ? stripBlockIdFromLine(stripped) : stripped).replace(/[ \t]+$/, '');
+
+  if (!next.trim()) {
+    lines.splice(at, 1);
+    // The marker had a blank line either side; one of them goes with it.
+    if (at > 0 && at < lines.length && !lines[at - 1].trim() && !lines[at].trim()) {
+      lines.splice(at, 1);
+    }
+  } else {
+    lines[at] = next;
+  }
+
+  return { ok: true, reason: '', content: lines.join('\n'), blockId };
+}
+
 /** Everything after the frontmatter block, or the whole text if there is none. */
 function stripFrontmatter(text) {
   const value = String(text == null ? '' : text);
@@ -1190,6 +1282,20 @@ class LinknotePlugin extends Plugin {
       this.toggleCardsCollapsed(true);
     });
 
+    const drop = head.createEl('button', { cls: 'lkn-card-remove', text: '×' });
+    drop.setAttribute('aria-label', 'Remove this linknote');
+    drop.setAttribute('title', 'Remove this linknote');
+    drop.addEventListener('click', (evt) => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      const source = this.app.vault.getAbstractFileByPath(sourcePath);
+      if (!source || !(source instanceof TFile)) {
+        new Notice('Linknote: the note this card belongs to could not be found.');
+        return;
+      }
+      this.confirmRemoval(source, file);
+    });
+
     const body = card.createDiv({ cls: 'lkn-card-body' });
     if (!text) return;
 
@@ -1292,8 +1398,12 @@ class LinknotePlugin extends Plugin {
     return out;
   }
 
-  /** Draws the rows shared by the sidebar and the sheet. */
-  async renderLinknoteRows(target, sourceFile, entries) {
+  /**
+   * Draws the rows shared by the sidebar and the sheet. onRemoved, when
+   * given, is called after a row's linknote has actually been removed — the
+   * sheet uses it to close itself, since what it was showing is gone.
+   */
+  async renderLinknoteRows(target, sourceFile, entries, onRemoved) {
     target.empty();
     if (!entries.length) {
       target.createDiv({ cls: 'lkn-list-empty', text: 'No linknotes in this note.' });
@@ -1307,7 +1417,17 @@ class LinknotePlugin extends Plugin {
       // is not always there — a heading anchor may leave nothing to quote.
       const info = await this.readLinknote(entry.file);
       const meta = [info.author, info.created].filter(Boolean).join(' · ');
-      row.createDiv({ cls: 'lkn-list-meta', text: meta || entry.file.basename });
+      const head = row.createDiv({ cls: 'lkn-list-head' });
+      head.createDiv({ cls: 'lkn-list-meta', text: meta || entry.file.basename });
+
+      const drop = head.createEl('button', { cls: 'lkn-list-remove', text: '×' });
+      drop.setAttribute('aria-label', 'Remove this linknote');
+      drop.setAttribute('title', 'Remove this linknote');
+      drop.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        this.confirmRemoval(sourceFile, entry.file, onRemoved);
+      });
 
       if (entry.passage) {
         const passage = row.createDiv({ cls: 'lkn-list-passage', text: entry.passage });
@@ -1325,6 +1445,132 @@ class LinknotePlugin extends Plugin {
         this.app.workspace.openLinkText(entry.file.path, sourceFile.path, evt.metaKey || evt.ctrlKey);
       });
     }
+  }
+
+  /**
+   * True when nothing else in the vault points at this block. Asked before a
+   * block ID is removed, since the ID may be doing work for another note.
+   * Walks the public link caches; the linknote being removed is excused.
+   */
+  blockIdIsUnused(sourceFile, blockId, exceptPath) {
+    if (!blockId) return true;
+    const wanted = '#^' + blockId;
+    try {
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        if (file.path === exceptPath) continue;
+        const cache = this.app.metadataCache.getFileCache(file);
+        for (const link of (cache && cache.links) || []) {
+          const raw = String((link && link.link) || '');
+          if (raw.indexOf(wanted) === -1) continue;
+          const target = raw.split('#')[0];
+          // A subpath with no note in front points inside the same file.
+          const dest = target
+            ? this.app.metadataCache.getFirstLinkpathDest(target, file.path)
+            : file;
+          if (dest && dest.path === sourceFile.path) return false;
+        }
+        for (const embed of (cache && cache.embeds) || []) {
+          const raw = String((embed && embed.link) || '');
+          if (raw.indexOf(wanted) === -1) continue;
+          const target = raw.split('#')[0];
+          const dest = target
+            ? this.app.metadataCache.getFirstLinkpathDest(target, file.path)
+            : file;
+          if (dest && dest.path === sourceFile.path) return false;
+        }
+      }
+    } catch (e) {
+      // Unsure means leave it alone.
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Works out what removing a linknote would do, without doing any of it.
+   * The confirmation is built from this, so what the user is told and what
+   * happens are the same thing.
+   */
+  async planRemoval(sourceFile, noteFile) {
+    const names = linkNamesFor(noteFile.path);
+    let content = '';
+    try {
+      content = await this.app.vault.read(sourceFile);
+    } catch (e) {
+      return { ok: false, reason: 'unreadable' };
+    }
+
+    const found = removeAnchor(content, names, false);
+    if (!found.ok) return { ok: false, reason: found.reason };
+
+    const blockId = found.blockId;
+    const dropBlockId = !!blockId && this.blockIdIsUnused(sourceFile, blockId, noteFile.path);
+    const result = dropBlockId ? removeAnchor(content, names, true) : found;
+
+    return {
+      ok: true,
+      reason: '',
+      sourceFile,
+      noteFile,
+      blockId,
+      dropBlockId,
+      before: content,
+      after: result.content,
+    };
+  }
+
+  /**
+   * Carries out a plan. The note goes to wherever the vault sends deleted
+   * files, not straight out of existence, and the source is only written when
+   * it still reads as it did when the plan was made.
+   */
+  async applyRemoval(plan) {
+    let wrote = false;
+    try {
+      const now = await this.app.vault.read(plan.sourceFile);
+      if (now !== plan.before) {
+        new Notice('Linknote: the note changed while the confirmation was open. Nothing was removed.');
+        return false;
+      }
+      await this.app.vault.process(plan.sourceFile, () => plan.after);
+      wrote = true;
+      await this.app.fileManager.trashFile(plan.noteFile);
+    } catch (e) {
+      // Said plainly, because a half-done removal is worth knowing about.
+      new Notice(
+        wrote
+          ? 'Linknote: the marker was removed, but the note itself could not be deleted.'
+          : 'Linknote: removal failed. Nothing was changed.'
+      );
+      return false;
+    }
+
+    new Notice('Linknote removed: ' + plan.noteFile.basename);
+    // Housekeeping only. A card left on screen for a moment is not a failure,
+    // so it never turns a finished removal into a reported one.
+    try {
+      this.sweepCards();
+      this.scheduleRelayout();
+    } catch (e) {
+      /* the next pass will catch up */
+    }
+    return true;
+  }
+
+  /** Asks first. Called from a card, from the list and from the sheet. */
+  async confirmRemoval(sourceFile, noteFile, onRemoved) {
+    const plan = await this.planRemoval(sourceFile, noteFile);
+    if (!plan.ok) {
+      const why =
+        plan.reason === 'ambiguous'
+          ? 'the source note links to it in more than one place'
+          : plan.reason === 'unreadable'
+            ? 'the source note could not be read'
+            : 'no marker for it was found in the source note';
+      new Notice('Linknote: nothing was removed — ' + why + '.');
+      return;
+    }
+    new LinknoteRemoveModal(this.app, this, plan, onRemoved).open();
   }
 
   /** True for a note that lives in the linknote folder. */
@@ -2086,7 +2332,60 @@ class LinknoteListView extends ItemView {
     }
 
     const entries = await this.plugin.linknotesOf(file);
-    await this.plugin.renderLinknoteRows(el, file, entries);
+    await this.plugin.renderLinknoteRows(el, file, entries, () => this.draw());
+  }
+}
+
+/** What removing a linknote will do, said plainly, before it is done. */
+class LinknoteRemoveModal extends Modal {
+  constructor(app, plugin, plan, onRemoved) {
+    super(app);
+    this.plugin = plugin;
+    this.plan = plan;
+    this.onRemoved = onRemoved;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    this.modalEl.addClass('lkn-modal');
+    contentEl.empty();
+    contentEl.createEl('h3', { text: 'Remove this linknote?' });
+
+    const list = contentEl.createEl('ul', { cls: 'lkn-remove-list' });
+    list.createEl('li', {
+      text: '“' + this.plan.noteFile.basename + '” goes to wherever your vault sends deleted files.',
+    });
+    list.createEl('li', {
+      text: 'Its marker is taken out of “' + this.plan.sourceFile.basename + '”.',
+    });
+    if (this.plan.blockId && this.plan.dropBlockId) {
+      list.createEl('li', {
+        text: 'The block ID ^' + this.plan.blockId + ' goes too — nothing else in the vault points at it.',
+      });
+    } else if (this.plan.blockId) {
+      list.createEl('li', {
+        text: 'The block ID ^' + this.plan.blockId + ' stays: something else in the vault points at it.',
+      });
+    }
+    contentEl.createDiv({
+      cls: 'lkn-hint',
+      text: 'Nothing else in either note is touched.',
+    });
+
+    const buttons = contentEl.createDiv({ cls: 'lkn-buttons' });
+    buttons.createDiv({ cls: 'lkn-hint' });
+    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    cancel.addEventListener('click', () => this.close());
+    const go = buttons.createEl('button', { text: 'Remove', cls: 'mod-warning' });
+    go.addEventListener('click', async () => {
+      this.close();
+      const done = await this.plugin.applyRemoval(this.plan);
+      if (done && typeof this.onRemoved === 'function') this.onRemoved();
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 
@@ -2104,7 +2403,7 @@ class LinknoteSheet extends Modal {
     this.contentEl.empty();
     this.contentEl.createEl('h3', { text: 'Linknotes' });
     const list = this.contentEl.createDiv({ cls: 'lkn-list' });
-    this.plugin.renderLinknoteRows(list, this.sourceFile, this.entries);
+    this.plugin.renderLinknoteRows(list, this.sourceFile, this.entries, () => this.close());
   }
 
   onClose() {
@@ -2721,6 +3020,11 @@ module.exports.toYamlBlock = toYamlBlock;
 module.exports.stripFrontmatter = stripFrontmatter;
 module.exports.sectionUnderHeading = sectionUnderHeading;
 module.exports.anchorExcerpt = anchorExcerpt;
+module.exports.normaliseLinkTarget = normaliseLinkTarget;
+module.exports.linkNamesFor = linkNamesFor;
+module.exports.removeLinkFromLine = removeLinkFromLine;
+module.exports.blockIdOfLine = blockIdOfLine;
+module.exports.removeAnchor = removeAnchor;
 module.exports.toggleTaskLine = toggleTaskLine;
 module.exports.tagQueryAt = tagQueryAt;
 module.exports.applyTagPick = applyTagPick;

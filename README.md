@@ -129,6 +129,12 @@ Press the **–** on any card to stow them all. Each shrinks to a strip beside i
 
 The text on a card comes from the section under the **body heading** — `Linknote` by default. Edit the linknote and the card follows, without reopening the note it sits in. A linknote with no such heading falls back to its `body` property, and then to its whole contents.
 
+### Removing a linknote
+
+Press the **×** on a card, or on a row in the sidebar or the sheet. A window first says exactly what will happen: the linknote goes to wherever your vault sends deleted files, its marker comes out of the source note, and the block ID goes with it — unless something else in your vault points at that block, in which case the ID stays and only the marker is removed. Nothing else in either note is touched.
+
+Two things stop a removal rather than guess at it. If the source note links to that linknote from more than one place, Linknote will not choose which marker to take out. And if the source note changed while the window was open, the removal is abandoned so that your edit is not written over.
+
 ## Using your linknotes
 
 A linknote is an ordinary note, which is the whole point. It appears in search, in the graph and in backlinks without any help from this plugin. Two properties make it useful beyond that:
@@ -185,7 +191,7 @@ Headings are a case of their own. Obsidian has no block ID for a heading, and ap
 - A heading is referenced by its heading anchor rather than a block ID. Rename the heading later and the reference goes stale — unlike a block ID, which survives edits.
 - If two blocks in a note have exactly the same text, or two list items do, Linknote stops instead of picking one.
 - Cards are drawn in Reading view only, and the tag list is built by walking the vault's file caches the first time it is needed.
-- There is no command to remove a linknote yet. Delete the note and remove the ` [[…]]` and ` ^id` from the source by hand.
+- Removal stops rather than guesses. If the source note links to the same linknote from more than one place, Linknote will not choose which marker to take out, and says so.
 
 ## Multiple windows
 
@@ -203,6 +209,11 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.14.0
+
+- **Removing a linknote.** The **×** on a card, on a sidebar row or on a sheet row removes the linknote and its marker together. A window says what will happen first: the note goes to wherever your vault sends deleted files, the marker comes out of the source, and the block ID goes with it only when nothing else in the vault points at that block.
+- Removal refuses rather than guesses. Two markers for the same note in one source, or an edit to the source while the window is open, and nothing is removed.
 
 ### 0.13.1
 
