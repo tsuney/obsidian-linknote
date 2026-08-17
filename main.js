@@ -33,9 +33,11 @@ const {
  * ------------------------------------------------------------------------ */
 
 const DEFAULT_NOTE_TEMPLATE = `---
+type: Linknote
 created: {{date}} {{time}}
 source: "{{sourceBlock}}"
 author: {{author}}
+selection: {{selectionYaml}}
 body: {{bodyYaml}}
 ---
 > [!NOTE]- {{titleShort}}... {{sourceBlock}}
@@ -312,6 +314,91 @@ function toYamlBlock(text, indent) {
 }
 
 /**
+ * Where a passage sits inside a longer text, ignoring how the whitespace was
+ * broken. Returns offsets into the original string, or null when the passage
+ * is not there. Used to highlight the words a linknote is about inside the
+ * block it is anchored to: the text was recorded from the rendered note, so it
+ * matches what is on screen rather than the markup.
+ */
+function runInText(raw, needle) {
+  const hay = collapseWithMap(String(raw == null ? '' : raw));
+  const want = collapseWithMap(String(needle == null ? '' : needle)).text;
+  if (!want) return null;
+
+  const at = hay.text.indexOf(want);
+  if (at === -1) return null;
+  return { start: hay.map[at], end: hay.map[at + want.length - 1] + 1 };
+}
+
+/** Collapses runs of whitespace, keeping a map back to the original offsets. */
+function collapseWithMap(raw) {
+  const out = [];
+  const map = [];
+  let pending = false;
+  for (let i = 0; i < raw.length; i++) {
+    if (/\s/.test(raw[i])) {
+      pending = out.length > 0;
+      continue;
+    }
+    if (pending) {
+      out.push(' ');
+      map.push(i);
+      pending = false;
+    }
+    out.push(raw[i]);
+    map.push(i);
+  }
+  return { text: out.join(''), map };
+}
+
+/**
+ * The passage to show for a linknote: the `selection` property when it is
+ * there, and otherwise the quote the note keeps it in. One place decides it,
+ * so a card and a sidebar row never disagree.
+ */
+function selectionShown(frontmatter, content, bodyHeading) {
+  const fm = frontmatter || null;
+  const raw =
+    fm && (typeof fm.selection === 'string' || typeof fm.selection === 'number')
+      ? String(fm.selection)
+      : '';
+  const text = raw.trim() ? raw : quotedSelectionOf(content, bodyHeading);
+  return String(text).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The passage a linknote was made from, read back out of the note.
+ *
+ * Used when the note carries no `selection` property — every linknote written
+ * before that property existed, and any template that leaves it out. The
+ * shipped templates put the passage in a quote above the body heading, so the
+ * first run of quoted lines there is it. A callout's own title line names the
+ * note rather than the passage, so it is skipped.
+ */
+function quotedSelectionOf(content, bodyHeading) {
+  const body = stripFrontmatter(content);
+  const heading = String(bodyHeading == null ? '' : bodyHeading).trim();
+  const out = [];
+
+  for (const line of body.split('\n')) {
+    if (/^#{1,6}\s/.test(line)) {
+      const title = line.replace(/^#{1,6}\s+/, '').replace(/\s*\^[A-Za-z0-9-]+$/, '').trim();
+      if (!heading || title === heading) break;
+    }
+    const quoted = line.match(/^\s*>\s?(.*)$/);
+    if (!quoted) {
+      if (out.length) break;
+      continue;
+    }
+    const inner = quoted[1];
+    if (/^\s*\[!/.test(inner)) continue;
+    out.push(inner.trim());
+  }
+
+  return out.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * The text under a heading, down to the next heading of the same level or
  * higher. This is how a linknote says which part of itself is the note: an
  * explicit marker rather than a guess about layout. Fenced code is skipped,
@@ -393,21 +480,99 @@ const MDLINK_RE = /!?\[[^\]]*\]\(([^)]+)\)/g;
  * that separated it. Reports whether anything was found, so the caller can
  * refuse rather than write a line it did not recognise.
  */
+/**
+ * A folder a linknote may be written to. Empty means "not set", which the
+ * caller turns into the default: an empty folder would make every note in the
+ * vault a linknote. A path that climbs out of the vault is refused outright.
+ */
+function safeFolder(value) {
+  const clean = String(value == null ? '' : value)
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .trim();
+  if (!clean) return '';
+  if (clean.split('/').some((part) => part === '..')) return '';
+  return clean;
+}
+
+/**
+ * Settings as read from data.json, made safe to use. The file is ordinary
+ * JSON in the vault: it can be hand-edited, or arrive over sync from another
+ * device, so nothing in it is trusted to be the right shape.
+ */
+function sanitizeSettings(data) {
+  const out = {};
+  if (!data || typeof data !== 'object') return out;
+
+  for (const key of Object.keys(DEFAULT_SETTINGS)) {
+    if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
+    const value = data[key];
+    const fallback = DEFAULT_SETTINGS[key];
+
+    if (typeof fallback === 'boolean') {
+      out[key] = !!value;
+    } else if (typeof fallback === 'number') {
+      const n = Number(value);
+      if (Number.isFinite(n)) out[key] = n;
+    } else if (typeof value === 'string') {
+      out[key] = value;
+    }
+  }
+
+  const folder = safeFolder(out.folder);
+  if (!folder) delete out.folder;
+  else out.folder = folder;
+
+  if (typeof out.filenameTemplate === 'string' && !out.filenameTemplate.trim()) {
+    delete out.filenameTemplate;
+  }
+  return out;
+}
+
+/** What a link shows: the alias of a wikilink, or the text of a markdown link. */
+function linkDisplayText(raw) {
+  const value = String(raw == null ? '' : raw);
+  const wiki = value.match(/^!?\[\[([^\]]+)\]\]$/);
+  if (wiki) {
+    const bar = wiki[1].indexOf('|');
+    return (bar === -1 ? wiki[1] : wiki[1].slice(bar + 1)).trim();
+  }
+  const md = value.match(/^!?\[([^\]]*)\]\(/);
+  return md ? md[1].trim() : '';
+}
+
 function removeLinkFromLine(line, names) {
   const value = String(line == null ? '' : line);
   const wanted = (names || []).map(normaliseLinkTarget);
 
+  // Every link to the note on this line, not just the first. One line may
+  // hold the marker and a mention of the same note in the prose, and removing
+  // the wrong one would take the prose link and leave the marker behind.
+  const found = [];
   for (const re of [WIKILINK_RE, MDLINK_RE]) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(value)) !== null) {
       if (wanted.indexOf(normaliseLinkTarget(m[1])) === -1) continue;
-      const before = value.slice(0, m.index).replace(/[ \t]+$/, '');
-      const after = value.slice(m.index + m[0].length);
-      return { line: before + after, removed: true };
+      found.push({ at: m.index, len: m[0].length, text: linkDisplayText(m[0]) });
     }
   }
-  return { line: value, removed: false };
+  if (!found.length) return { line: value, removed: false, count: 0 };
+
+  // With more than one, the marker is the one that looks like a marker. If
+  // that is still not a single link, the caller is told and stops.
+  let hits = found;
+  if (hits.length > 1) {
+    const markerish = hits.filter((h) => markerMatch(h.text, '') === 'maybe');
+    if (markerish.length === 1) hits = markerish;
+  }
+  if (hits.length > 1) return { line: value, removed: false, count: hits.length };
+
+  const hit = hits[0];
+  const before = value.slice(0, hit.at).replace(/[ \t]+$/, '');
+  const after = value.slice(hit.at + hit.len);
+  return { line: before + after, removed: true, count: 1 };
 }
 
 /** The block ID at the end of a line, without the caret. */
@@ -430,10 +595,14 @@ function stripBlockIdFromLine(line) {
 function removeAnchor(content, names, dropBlockId) {
   const lines = String(content == null ? '' : content).split('\n');
   const hits = [];
+  let crowded = false;
   for (let i = 0; i < lines.length; i++) {
-    if (removeLinkFromLine(lines[i], names).removed) hits.push(i);
+    const out = removeLinkFromLine(lines[i], names);
+    if (out.removed) hits.push(i);
+    else if (out.count > 1) crowded = true;
   }
 
+  if (crowded) return { ok: false, reason: 'ambiguous', content: null, blockId: '' };
   if (!hits.length) return { ok: false, reason: 'not-found', content: null, blockId: '' };
   if (hits.length > 1) return { ok: false, reason: 'ambiguous', content: null, blockId: '' };
 
@@ -544,9 +713,99 @@ function filterTags(tags, query, limit) {
   return starts.concat(contains).slice(0, max);
 }
 
-/** Escapes a value for use inside an attribute selector. */
+/**
+ * The block a marker has to itself, or null when the marker shares its block
+ * with other text. Climbs while the ancestor holds nothing but the marker, so
+ * the answer is the same whether the caller has the block in hand or the whole
+ * view. Stops at the rendered container, which is not a block.
+ */
+function markerBlockOf(a, marker) {
+  const wanted = String(marker == null ? '' : marker).trim();
+  if (!wanted || !a) return null;
+
+  let node = a.parentElement;
+  let best = null;
+  for (let i = 0; i < 6 && node; i++) {
+    const stop =
+      node.classList &&
+      (node.classList.contains('markdown-preview-view') ||
+        node.classList.contains('markdown-preview-sizer') ||
+        node.classList.contains('markdown-rendered'));
+    if (stop) break;
+    if (String(node.textContent || '').trim() === wanted) best = node;
+    else if (best) break;
+    node = node.parentElement;
+  }
+  return best;
+}
+
+/**
+ * Where a block sits in a note, counting only whole-line matches.
+ *
+ * A plain indexOf also matches a block that is a prefix of a longer line —
+ * which is exactly what a stale selection looks like once a marker has been
+ * appended to it. Anchoring there wrote the second marker into the middle of
+ * the line, stranding the first block ID and leaving both linknotes pointing
+ * at nothing.
+ */
+function blockOccurrences(content, block) {
+  const text = String(content == null ? '' : content);
+  const needle = String(block == null ? '' : block);
+  if (!needle) return [];
+
+  const out = [];
+  let at = text.indexOf(needle);
+  while (at !== -1) {
+    const before = at === 0 ? '\n' : text[at - 1];
+    // Trailing spaces belong to the match: a block found by searching has had
+    // them trimmed off, and leaving them behind would strand them after the
+    // block ID.
+    let end = at + needle.length;
+    while (end < text.length && (text[end] === ' ' || text[end] === '\t')) end++;
+    const after = end >= text.length ? '\n' : text[end];
+    if (before === '\n' && (after === '\n' || after === '\r')) {
+      out.push({ at, len: end - at });
+    }
+    at = text.indexOf(needle, at + 1);
+  }
+  return out;
+}
+
+/**
+ * Puts the anchored block back into the note.
+ *
+ * When the marker had to go on a line of its own — a heading, a table, a code
+ * block — it needs a blank line after it as well as before. Without one it
+ * joins whatever follows into a single block: the marker can no longer be
+ * drawn up beside its heading, and it is read as part of the next paragraph
+ * or list. A heading written straight above its list is the common case.
+ */
+function spliceAnchored(data, at, len, blockSrc, anchored) {
+  const text = String(data == null ? '' : data);
+  const ownLine = anchored.slice(String(blockSrc).length).startsWith('\n\n');
+  let rest = text.slice(at + len);
+
+  if (ownLine && rest) {
+    const next = rest.replace(/^\r?\n/, '');
+    const started = next !== rest;
+    const firstLine = next.split('\n')[0];
+    if (started && firstLine.trim()) rest = '\n' + rest;
+  }
+  return text.slice(0, at) + anchored + rest;
+}
+
+/**
+ * Escapes a value for use inside a quoted attribute selector. Quotes and
+ * backslashes are escaped; a line break is written as a CSS escape, since a
+ * raw one inside a string makes the whole selector a parse error — and a file
+ * name may carry one when it arrives from another system.
+ */
 function cssEscape(value) {
-  return String(value).replace(/["\\]/g, '\\$&');
+  return String(value)
+    .replace(/["\\]/g, '\\$&')
+    .replace(/\n/g, '\\00000a')
+    .replace(/\r/g, '\\00000d')
+    .replace(/\f/g, '\\00000c');
 }
 
 /**
@@ -656,7 +915,11 @@ function previewFilename(settings, now) {
   return (settings.folder ? settings.folder + '/' : '') + (name || 'Untitled') + '.md';
 }
 
+// A block ID is either appended to the line it names, or written on the line
+// below it — Obsidian's own form for a table or a code block. Both have to be
+// recognised, or an existing ID is treated as ordinary text and destroyed.
 const BLOCK_ID_RE = /[ \t]+\^([A-Za-z0-9-]+)[ \t]*$/;
+const BLOCK_ID_LINE_RE = /^[ \t]*\^([A-Za-z0-9-]+)[ \t]*$/;
 
 /* --------------------------------------------------------------------------
  * Anchoring (pure functions — covered by tests)
@@ -672,6 +935,22 @@ function buildAnchoredBlock(blockSrc, link, blockId) {
 
   let last = lines.length - 1;
   while (last > 0 && lines[last].trim() === '') last--;
+
+  // A block ID sitting alone on the last line names the block above it. The
+  // marker belongs on the text, and the ID has to stay where it is: moving it
+  // or adding a second one breaks every [[Note#^id]] pointing here.
+  let ownLineId = '';
+  let idLine = -1;
+  if (last > 0) {
+    const alone = lines[last].match(BLOCK_ID_LINE_RE);
+    if (alone) {
+      ownLineId = alone[1];
+      idLine = last;
+      last--;
+      while (last > 0 && lines[last].trim() === '') last--;
+    }
+  }
+
   const lastLine = lines[last];
   const firstLine = (lines.find((l) => l.trim() !== '') || '').trim();
 
@@ -682,12 +961,23 @@ function buildAnchoredBlock(blockSrc, link, blockId) {
   const needsOwnLine = isHeading || isCodeFence || isMathBlock || isTable;
 
   if (needsOwnLine) {
+    if (ownLineId) {
+      if (!link) return blockSrc;
+      // The ID has to stay last on its line, so the marker goes in front of it.
+      lines[idLine] = link + ' ^' + ownLineId;
+      return lines.join('\n');
+    }
     const tail = [link, blockId ? '^' + blockId : ''].filter(Boolean).join(' ');
     if (!tail) return blockSrc;
     return blockSrc.replace(/\s*$/, '') + '\n\n' + tail;
   }
 
-  // A block ID already on this line must survive: other notes may reference it.
+  // A block ID already here must survive: other notes may reference it.
+  if (ownLineId) {
+    if (!link) return blockSrc;
+    lines[last] = lines[last].replace(/\s+$/, '') + ' ' + link;
+    return lines.join('\n');
+  }
   const found = lastLine.match(BLOCK_ID_RE);
   const keepId = blockId || (found ? found[1] : '');
   const tail = [link, keepId ? '^' + keepId : ''].filter(Boolean).join(' ');
@@ -807,11 +1097,29 @@ function findBlockContaining(content, needle) {
 
 /** Expands an offset range out to its blank-line-delimited block. */
 function blockAround(content, at, len) {
-  let start = content.lastIndexOf('\n\n', at);
-  start = start === -1 ? 0 : start + 2;
-  let end = content.indexOf('\n\n', at + len);
-  end = end === -1 ? content.length : end;
-  return content.slice(start, end).replace(/\s+$/, '');
+  // Line by line rather than on '\n\n': a separator line holding a space, or a
+  // file saved with CRLF, is still a blank line, and treating it as text ran
+  // two paragraphs together — which anchored the marker to the wrong one.
+  const lines = content.split('\n');
+  const isBlank = (s) => s.replace(/\r/g, '').trim() === '';
+
+  const starts = [];
+  let pos = 0;
+  for (const line of lines) {
+    starts.push(pos);
+    pos += line.length + 1;
+  }
+
+  let from = 0;
+  while (from < lines.length - 1 && starts[from + 1] <= at) from++;
+  let to = from;
+  while (to < lines.length - 1 && starts[to + 1] < at + len) to++;
+
+  while (from > 0 && !isBlank(lines[from - 1])) from--;
+  while (to < lines.length - 1 && !isBlank(lines[to + 1])) to++;
+
+  const end = starts[to] + lines[to].length;
+  return content.slice(starts[from], end).replace(/\s+$/, '');
 }
 
 /**
@@ -835,6 +1143,9 @@ function existingBlockId(blockSrc) {
   const lines = blockSrc.split('\n');
   let last = lines.length - 1;
   while (last > 0 && lines[last].trim() === '') last--;
+  // Either form: appended to the line, or alone on the line below it.
+  const alone = lines[last].match(BLOCK_ID_LINE_RE);
+  if (alone) return alone[1];
   const m = lines[last].match(BLOCK_ID_RE);
   return m ? m[1] : null;
 }
@@ -945,12 +1256,69 @@ class LinknotePlugin extends Plugin {
 
   onunload() {
     this.hideFloatingButton();
+    this.removeAllTraces();
+  }
+
+  /**
+   * Puts every open document back as it was. The plugin draws into Obsidian's
+   * own rendered DOM — classes on blocks, cards in a gutter, custom
+   * properties on the body — and none of that belongs to a disabled plugin.
+   * A marker that was moved into a heading is carried back to the block it
+   * came from, so the note reads as it would with the plugin never installed.
+   */
+  removeAllTraces() {
+    this.clearPassage();
+    const gone = [
+      'lkn-cards',
+      'lkn-anchored',
+      'lkn-has-card',
+      'lkn-marker',
+      'lkn-marker-plain',
+      'lkn-relocated',
+    ];
+    const props = [
+      '--lkn-card-width',
+      '--lkn-card-gutter',
+      '--lkn-card-scale',
+      '--lkn-card-color',
+      '--lkn-card-lines',
+    ];
+
+    for (const doc of this.openDocuments()) {
+      try {
+        for (const a of Array.prototype.slice.call(doc.querySelectorAll('a.lkn-marker'))) {
+          const home = a._lknHome;
+          a._lknHome = null;
+          if (home && home.appendChild && home.isConnected) home.appendChild(a);
+        }
+        for (const stack of Array.prototype.slice.call(doc.querySelectorAll('.lkn-card-stack'))) {
+          for (const card of Array.prototype.slice.call(stack.querySelectorAll('.lkn-card'))) {
+            this.dropCardChild(card);
+          }
+          stack.remove();
+        }
+        for (const cls of gone) {
+          for (const el of Array.prototype.slice.call(doc.querySelectorAll('.' + cls))) {
+            el.classList.remove(cls);
+          }
+        }
+        for (const el of Array.prototype.slice.call(doc.querySelectorAll('[style*="--lkn-shift"]'))) {
+          el.style.removeProperty('--lkn-shift');
+        }
+        if (doc.body) {
+          doc.body.classList.remove('lkn-cards-collapsed');
+          for (const prop of props) doc.body.style.removeProperty(prop);
+        }
+      } catch (e) {
+        /* this document is already gone */
+      }
+    }
   }
 
   /* ------------------------------------------------------------- settings */
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) || {});
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, sanitizeSettings(await this.loadData()));
   }
 
   async saveSettings() {
@@ -1085,6 +1453,7 @@ class LinknotePlugin extends Plugin {
     // the marker there need not be this device's character.
     let onlyText = '';
     let count = 0;
+    const found = [];
 
     for (const a of links) {
       const text = String(a.textContent || '').trim();
@@ -1094,14 +1463,17 @@ class LinknotePlugin extends Plugin {
 
       count++;
       onlyText = text;
+      found.push({ el: a, text });
       a.classList.add('lkn-marker');
       if (s.markerStyle === 'plain') a.classList.add('lkn-marker-plain');
 
-      // On a phone the marker opens a sheet rather than the note itself: the
+      // On mobile the marker opens a sheet rather than the note itself: the
       // point of a note in the margin is to be read without leaving the page.
       if (Platform.isMobile && !a.dataset.lknSheet) {
         a.dataset.lknSheet = '1';
-        a.addEventListener('click', (evt) => {
+        // registerDomEvent, not addEventListener: the anchor belongs to
+        // Obsidian, and the handler has to go when the plugin does.
+        this.registerDomEvent(a, 'click', (evt) => {
           const ctx = this.ctxMap.get(el);
           const sourcePath = (ctx && ctx.sourcePath) || '';
           if (!sourcePath) return;
@@ -1118,7 +1490,12 @@ class LinknotePlugin extends Plugin {
     }
 
     // A marker alone in its block belongs visually to the heading above it.
-    if (count === 1) this.scheduleHeadingAttach(el, onlyText);
+    // Scheduled per marker rather than per `el`, so it works both here — where
+    // `el` is the block — and from a later sweep, where `el` is the whole view.
+    for (const hit of found) {
+      const block = markerBlockOf(hit.el, hit.text);
+      if (block) this.scheduleHeadingAttach(block, hit.text);
+    }
   }
 
   /**
@@ -1129,17 +1506,25 @@ class LinknotePlugin extends Plugin {
   scheduleHeadingAttach(el, marker) {
     try {
       if (String(el.textContent || '').trim() !== marker) return;
+      if (el.classList && el.classList.contains('lkn-relocated')) return;
       const win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
       if (!win) return;
 
-      // No rule beside the heading itself: the marker now sits in the heading
-      // line, which is signal enough, and a rule there reads as a quote bar.
-      const run = () => {
-        this.attachMarkerToHeading(el, marker);
+      // Retried, because one frame is not always enough: a post processor is
+      // handed a detached tree, and until it is in the document the heading
+      // above it cannot be reached. A single attempt that landed too early
+      // left the marker on its own line for good.
+      const run = (attempt) => {
+        if (!el.parentElement) return;
+        if (this.attachMarkerToHeading(el, marker)) return;
+        if (attempt >= 4) return;
+        const again = () => run(attempt + 1);
+        if (attempt < 2 && typeof win.requestAnimationFrame === 'function') win.requestAnimationFrame(again);
+        else win.setTimeout(again, attempt < 3 ? 120 : 500);
       };
 
-      if (typeof win.requestAnimationFrame === 'function') win.requestAnimationFrame(run);
-      else win.setTimeout(run, 0);
+      if (typeof win.requestAnimationFrame === 'function') win.requestAnimationFrame(() => run(0));
+      else win.setTimeout(() => run(0), 0);
     } catch (e) {
       /* the marker simply stays on its own line */
     }
@@ -1197,6 +1582,8 @@ class LinknotePlugin extends Plugin {
         }
       }
 
+      // Where it came from, so unloading the plugin can put it back.
+      link._lknHome = el;
       heading.appendChild(link);
       el.classList.add('lkn-relocated');
       return heading;
@@ -1226,10 +1613,10 @@ class LinknotePlugin extends Plugin {
   /**
    * Draws each linknote as a card beside the block it is attached to. In the
    * margin where there is room, inline where there is not — a narrow window,
-   * a full-width note, or a phone. Nothing is written to the note.
+   * a full-width note, or mobile. Nothing is written to the note.
    */
   renderCards(el, ctx) {
-    // Not on a phone. There is no margin to put a card in and inline cards
+    // Not on mobile. There is no margin to put a card in and inline cards
     // interrupt the reading; the sheet and the sidebar answer this instead.
     if (!this.settings.showCards || Platform.isMobile) return;
 
@@ -1245,6 +1632,9 @@ class LinknotePlugin extends Plugin {
     for (const a of links) {
       const linktext = a.getAttribute('data-href') || a.getAttribute('href') || '';
       if (!linktext) continue;
+      // A marker inside a card belongs to the linknote being shown, not to
+      // the note being read.
+      if (a.closest && a.closest('.lkn-card')) continue;
 
       let file = null;
       try {
@@ -1252,12 +1642,25 @@ class LinknotePlugin extends Plugin {
       } catch (e) {
         file = null;
       }
-      if (!file) continue;
+      // A card is for a linknote. A marker-looking link to some other note —
+      // someone may well use † as an alias — gets no card, and so no way to
+      // delete a note this plugin does not own.
+      if (!file || !this.isLinknote(file)) continue;
+
+      // One card per marker. The marker element is the identity, so two
+      // passes over the same rendered block cannot each add a card for it,
+      // whichever host each decides to hang it on. parentElement rather than
+      // isConnected: on the first pass the whole tree is still detached.
+      if (a._lknCard && a._lknCard.parentElement) continue;
 
       const host = (a.closest && a.closest('li')) || el;
       if (!host || !host.classList || !host.createDiv) continue;
-      const already =
-        host.querySelector && host.querySelector('.lkn-card[data-lkn-path="' + cssEscape(file.path) + '"]');
+      let already = null;
+      try {
+        already = host.querySelector('.lkn-card[data-lkn-path="' + cssEscape(file.path) + '"]');
+      } catch (e) {
+        continue; // an unusable file name is not worth taking the render down
+      }
       if (already) continue;
 
       host.classList.add('lkn-has-card');
@@ -1267,6 +1670,7 @@ class LinknotePlugin extends Plugin {
       if (!stack) stack = host.createDiv({ cls: 'lkn-card-stack' });
 
       const card = stack.createDiv({ cls: 'lkn-card' });
+      a._lknCard = card;
       card.setAttribute('data-lkn-path', file.path);
       card.setAttribute('data-lkn-src', sourcePath);
       // The marker as written here, so a card says which device wrote it
@@ -1292,6 +1696,7 @@ class LinknotePlugin extends Plugin {
     let text = '';
     let author = '';
     let created = '';
+    let passage = '';
     try {
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = (cache && cache.frontmatter) || null;
@@ -1307,6 +1712,7 @@ class LinknotePlugin extends Plugin {
       // The note itself, not the property: the property is written once, and
       // goes stale the moment the note is edited.
       const content = await this.app.vault.cachedRead(file);
+      passage = selectionShown(fm, content, this.settings.bodyHeading);
       text = sectionUnderHeading(content, this.settings.bodyHeading);
       if (!text && fm && typeof fm.body === 'string' && fm.body.trim()) text = fm.body;
       if (!text) text = stripFrontmatter(content);
@@ -1318,6 +1724,7 @@ class LinknotePlugin extends Plugin {
     // bailing here is what left the card an empty box. Losing its host is the
     // real signal that the card is gone.
     if (!card.parentElement) return;
+    this.dropCardChild(card);
     card.empty();
 
     const head = card.createDiv({ cls: 'lkn-card-head' });
@@ -1327,7 +1734,6 @@ class LinknotePlugin extends Plugin {
     // only by a trailing number, which told the reader nothing.
     const label = [author, created].filter(Boolean).join(' · ') || file.basename;
     const title = head.createEl('a', { cls: 'lkn-card-title', text: label });
-    title.setAttribute('href', file.path);
     title.setAttribute('aria-label', file.basename);
     title.setAttribute('title', file.basename);
     title.addEventListener('click', (evt) => {
@@ -1357,23 +1763,201 @@ class LinknotePlugin extends Plugin {
       this.confirmRemoval(source, file);
     });
 
+    // Which words this linknote is about. Several linknotes on one block
+    // differ only in this, so without it a card cannot be told from its
+    // neighbour. One line, with the whole passage on hover.
+    if (passage) {
+      const quote = card.createDiv({ cls: 'lkn-card-quote', text: passage });
+      quote.setAttribute('title', passage + '\n(press to show it in the text)');
+      quote.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        const block = card.closest && card.closest('.lkn-has-card');
+        if (!this.highlightPassage(block, passage)) {
+          new Notice('Linknote: those words are no longer in this block.');
+        }
+      });
+    }
+
     const body = card.createDiv({ cls: 'lkn-card-body' });
     if (!text) return;
 
     try {
-      if (MarkdownRenderer && typeof MarkdownRenderer.render === 'function') {
-        await MarkdownRenderer.render(this.app, text, body, file.path, this);
-      } else if (MarkdownRenderer && typeof MarkdownRenderer.renderMarkdown === 'function') {
-        await MarkdownRenderer.renderMarkdown(text, body, file.path, this);
-      } else {
-        body.setText(text);
-      }
+      // The rendered markdown belongs to a child of its own, unloaded the
+      // next time this card is painted. Handing it the plugin instead would
+      // keep every embed, timer and code block alive until the plugin does.
+      const child = new MarkdownRenderChild(body);
+      this.addChild(child);
+      card._lknChild = child;
+      await MarkdownRenderer.render(this.app, text, body, file.path, child);
     } catch (e) {
       body.setText(text);
     }
 
     // The card just changed height, so everything below it has to move.
     this.scheduleRelayout();
+  }
+
+  /**
+   * One card per linknote in a view, keeping the first.
+   *
+   * Another plugin may re-render a block into a second copy of the same list
+   * item — the Tasks plugin does — and each copy carries its own marker, so
+   * each was given its own card for the same linknote. Nothing in a single
+   * pass can see that: the copies arrive separately and detached. So the
+   * extras are cleared here, once everything is on screen.
+   */
+  dedupeCards(view) {
+    let cards = [];
+    try {
+      cards = Array.prototype.slice.call(view.querySelectorAll('.lkn-card'));
+    } catch (e) {
+      return;
+    }
+    if (cards.length < 2) return;
+
+    const seen = new Set();
+    for (const card of cards) {
+      const path = card.getAttribute('data-lkn-path') || '';
+      if (!path) continue;
+      if (!seen.has(path)) {
+        seen.add(path);
+        continue;
+      }
+      const stack = card.parentElement;
+      this.dropCardChild(card);
+      card.remove();
+      if (stack && stack.classList && stack.classList.contains('lkn-card-stack')) {
+        if (!stack.querySelector('.lkn-card')) {
+          const host = stack.parentElement;
+          stack.remove();
+          if (host && host.classList) host.classList.remove('lkn-has-card');
+        }
+      }
+    }
+  }
+
+  /**
+   * Paints the words a linknote is about inside the block it is anchored to.
+   *
+   * Nothing is written to the note, and nothing in the DOM is changed: the
+   * range is handed to the browser's own highlight registry, which colours it
+   * without wrapping it in anything. A passage that spans bold text or a link
+   * therefore highlights correctly, and Obsidian's rendered tree is untouched.
+   *
+   * The anchor is still the block. This only says, inside that block, which
+   * words were selected — and where the note has since been revised so that
+   * those words are no longer there, nothing happens at all.
+   */
+  highlightPassage(block, passage) {
+    const text = String(passage == null ? '' : passage).trim();
+    if (!block || !text) return false;
+
+    const doc = block.ownerDocument;
+    const win = (doc && doc.defaultView) || null;
+    if (!win || !win.CSS || !win.CSS.highlights || typeof win.Highlight !== 'function') return false;
+
+    try {
+      // The block's own text, with the cards this plugin drew left out.
+      const walker = doc.createTreeWalker(block, win.NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) => {
+          const parent = node.parentElement;
+          if (parent && parent.closest && parent.closest('.lkn-card-stack')) {
+            return win.NodeFilter.FILTER_REJECT;
+          }
+          return win.NodeFilter.FILTER_ACCEPT;
+        },
+      });
+
+      const spans = [];
+      let raw = '';
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const value = node.nodeValue || '';
+        spans.push({ node, from: raw.length, to: raw.length + value.length });
+        raw += value;
+      }
+
+      const run = runInText(raw, text);
+      if (!run) return false;
+
+      const at = (offset, isEnd) => {
+        for (const span of spans) {
+          const inside = isEnd
+            ? offset > span.from && offset <= span.to
+            : offset >= span.from && offset < span.to;
+          if (inside) return { node: span.node, offset: offset - span.from };
+        }
+        return null;
+      };
+      const from = at(run.start, false);
+      const to = at(run.end, true);
+      if (!from || !to) return false;
+
+      const range = doc.createRange();
+      range.setStart(from.node, from.offset);
+      range.setEnd(to.node, to.offset);
+
+      this.clearPassage();
+      win.CSS.highlights.set('lkn-hit', new win.Highlight(range));
+      this.hitWindow = win;
+      // A pointer rather than a state: it goes by itself, so the reader is not
+      // left with a stray colour on the page.
+      this.hitTimer = win.setTimeout(() => this.clearPassage(), 4000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * The same, after a jump from the sidebar. The view has to draw before there
+   * is anything to paint, and how long that takes is not knowable, so it is
+   * tried a few times and then let go. The whole preview is searched rather
+   * than one block: the jump has already brought the right passage into view.
+   */
+  laterHighlight(file, passage, attempt) {
+    const round = attempt || 0;
+    if (round > 4) return;
+    window.setTimeout(() => {
+      let done = false;
+      try {
+        this.app.workspace.iterateAllLeaves((leaf) => {
+          if (done) return;
+          const view = leaf && leaf.view;
+          if (!view || !view.file || view.file.path !== file.path || !view.containerEl) return;
+          const el = view.containerEl.querySelector('.markdown-preview-view');
+          if (el && this.highlightPassage(el, passage)) done = true;
+        });
+      } catch (e) {
+        /* nothing is drawn yet */
+      }
+      if (!done) this.laterHighlight(file, passage, round + 1);
+    }, round === 0 ? 120 : 250);
+  }
+
+  /** Takes the highlight off again. */
+  clearPassage() {
+    const win = this.hitWindow;
+    if (this.hitTimer && win) win.clearTimeout(this.hitTimer);
+    this.hitTimer = null;
+    try {
+      if (win && win.CSS && win.CSS.highlights) win.CSS.highlights.delete('lkn-hit');
+    } catch (e) {
+      /* the window has gone */
+    }
+    this.hitWindow = null;
+  }
+
+  /** Unloads the rendered markdown a card was holding, if it held any. */
+  dropCardChild(card) {
+    const child = card && card._lknChild;
+    if (!child) return;
+    card._lknChild = null;
+    try {
+      this.removeChild(child);
+    } catch (e) {
+      /* already gone */
+    }
   }
 
   /**
@@ -1445,7 +2029,7 @@ class LinknotePlugin extends Plugin {
 
   /** What a linknote says, for a list or a sheet: who, when, and the note. */
   async readLinknote(file) {
-    const out = { author: '', created: '', text: '' };
+    const out = { author: '', created: '', text: '', selection: '' };
     try {
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = (cache && cache.frontmatter) || null;
@@ -1457,8 +2041,11 @@ class LinknotePlugin extends Plugin {
       }
       const content = await this.app.vault.cachedRead(file);
       out.text = sectionUnderHeading(content, this.settings.bodyHeading);
-      if (!out.text && fm && typeof fm.body === 'string') out.text = fm.body;
+      // The same fallback order as a card, empty property included, so a row
+      // and a card never show different things for the same linknote.
+      if (!out.text && fm && typeof fm.body === 'string' && fm.body.trim()) out.text = fm.body;
       if (!out.text) out.text = stripFrontmatter(content);
+      out.selection = selectionShown(fm, content, this.settings.bodyHeading);
     } catch (e) {
       /* what was gathered is enough */
     }
@@ -1509,13 +2096,20 @@ class LinknotePlugin extends Plugin {
         this.confirmRemoval(sourceFile, entry.file, onRemoved);
       });
 
-      if (entry.passage) {
-        const passage = row.createDiv({ cls: 'lkn-list-passage', text: entry.passage });
+      // The words selected, rather than the whole block: that is what tells
+      // two linknotes on one block apart. The block is the fallback, for a
+      // linknote that records no passage.
+      const shown = info.selection || entry.passage;
+      if (shown) {
+        const passage = row.createDiv({ cls: 'lkn-list-passage', text: shown });
         passage.setAttribute('aria-label', 'Go to the passage');
         passage.addEventListener('click', (evt) => {
           evt.stopPropagation();
           const sub = entry.blockId ? '#^' + entry.blockId : '';
           this.app.workspace.openLinkText(sourceFile.path + sub, sourceFile.path, false);
+          // After the jump, and only if the passage was recorded: the view
+          // needs a moment to draw before there is anything to paint.
+          if (info.selection) this.laterHighlight(sourceFile, info.selection);
         });
       }
 
@@ -1541,20 +2135,18 @@ class LinknotePlugin extends Plugin {
       for (const file of this.app.vault.getMarkdownFiles()) {
         if (file.path === exceptPath) continue;
         const cache = this.app.metadataCache.getFileCache(file);
-        for (const link of (cache && cache.links) || []) {
-          const raw = String((link && link.link) || '');
+        // frontmatterLinks as well as links and embeds: the shipped templates
+        // put the reference in a `source` property, and a linknote written
+        // from one of them holds the block ID nowhere else.
+        const refs = []
+          .concat((cache && cache.links) || [])
+          .concat((cache && cache.embeds) || [])
+          .concat((cache && cache.frontmatterLinks) || []);
+        for (const ref of refs) {
+          const raw = String((ref && ref.link) || '');
           if (raw.indexOf(wanted) === -1) continue;
           const target = raw.split('#')[0];
           // A subpath with no note in front points inside the same file.
-          const dest = target
-            ? this.app.metadataCache.getFirstLinkpathDest(target, file.path)
-            : file;
-          if (dest && dest.path === sourceFile.path) return false;
-        }
-        for (const embed of (cache && cache.embeds) || []) {
-          const raw = String((embed && embed.link) || '');
-          if (raw.indexOf(wanted) === -1) continue;
-          const target = raw.split('#')[0];
           const dest = target
             ? this.app.metadataCache.getFirstLinkpathDest(target, file.path)
             : file;
@@ -1609,13 +2201,18 @@ class LinknotePlugin extends Plugin {
   async applyRemoval(plan) {
     let wrote = false;
     try {
-      const now = await this.app.vault.read(plan.sourceFile);
-      if (now !== plan.before) {
+      // The comparison happens inside process(), on the data it hands over.
+      // Reading first and writing afterwards leaves a gap in which an edit —
+      // from another pane, or from sync — would be written over.
+      await this.app.vault.process(plan.sourceFile, (data) => {
+        if (data !== plan.before) return data;
+        wrote = true;
+        return plan.after;
+      });
+      if (!wrote) {
         new Notice('Linknote: the note changed while the confirmation was open. Nothing was removed.');
         return false;
       }
-      await this.app.vault.process(plan.sourceFile, () => plan.after);
-      wrote = true;
       await this.app.fileManager.trashFile(plan.noteFile);
     } catch (e) {
       // Said plainly, because a half-done removal is worth knowing about.
@@ -1641,6 +2238,12 @@ class LinknotePlugin extends Plugin {
 
   /** Asks first. Called from a card, from the list and from the sheet. */
   async confirmRemoval(sourceFile, noteFile, onRemoved) {
+    // Last line of defence before a file is trashed: this plugin deletes
+    // linknotes, and nothing else, whatever the caller thought it was doing.
+    if (!this.isLinknote(noteFile) || !String(this.settings.folder || '').trim()) {
+      new Notice('Linknote: that note is not in your linknote folder, so it was left alone.');
+      return;
+    }
     const plan = await this.planRemoval(sourceFile, noteFile);
     if (!plan.ok) {
       const why =
@@ -1734,7 +2337,7 @@ class LinknotePlugin extends Plugin {
   /**
    * Margin or inline. The margin needs a gutter that Obsidian does not leave,
    * so the view is asked to make one; where the pane is too narrow for that,
-   * or on a phone, the card goes inline instead.
+   * or on mobile, the card goes inline instead.
    */
   /**
    * Watches a stack's height. The cards fill in asynchronously, so a stack
@@ -1836,6 +2439,10 @@ class LinknotePlugin extends Plugin {
           return;
         }
         for (const el of els) {
+          // A card's own contents are rendered markdown too, and Obsidian
+          // marks them as such. Sweeping into them would draw cards inside
+          // cards; the note a card shows is not a note being read.
+          if (el.closest && el.closest('.lkn-card')) continue;
           // Decorating first: the class the cards key on may have gone too.
           this.decorateMarkers(el);
           this.renderCards(el, { sourcePath: view.file.path });
@@ -1919,7 +2526,8 @@ class LinknotePlugin extends Plugin {
 
   /** The sheet a marker opens: the linknotes attached to that one block. */
   async openSheetFor(link, sourcePath) {
-    const file = sourcePath && this.app.vault.getAbstractFileByPath(sourcePath);
+    const found = sourcePath && this.app.vault.getAbstractFileByPath(sourcePath);
+    const file = found instanceof TFile ? found : null;
     if (!file) return;
 
     const all = await this.linknotesOf(file);
@@ -1964,6 +2572,8 @@ class LinknotePlugin extends Plugin {
    * the height of a card depends on the text inside it.
    */
   layoutStacks(view) {
+    this.dedupeCards(view);
+
     let stacks = [];
     try {
       stacks = Array.prototype.slice.call(
@@ -2128,7 +2738,7 @@ class LinknotePlugin extends Plugin {
     if (Platform.isMobile) {
       btn.style.top = '';
       btn.style.left = '';
-      btn.style.display = 'block';
+      btn.show();
       return;
     }
 
@@ -2136,7 +2746,7 @@ class LinknotePlugin extends Plugin {
     const left = Math.min(Math.max(rect.left, 8), win.innerWidth - 120);
     btn.style.top = top + 'px';
     btn.style.left = left + 'px';
-    btn.style.display = 'block';
+    btn.show();
   }
 
   hideFloatingButton() {
@@ -2199,11 +2809,11 @@ class LinknotePlugin extends Plugin {
       );
     }
 
-    const firstAt = currentContent.indexOf(blockSrc);
-    if (firstAt === -1) {
+    const where = blockOccurrences(currentContent, blockSrc);
+    if (!where.length) {
       throw new Error('the source note has changed; refresh the view and retry');
     }
-    if (currentContent.indexOf(blockSrc, firstAt + 1) !== -1) {
+    if (where.length > 1) {
       throw new Error('several blocks share this exact text, so the position is ambiguous');
     }
 
@@ -2235,11 +2845,20 @@ class LinknotePlugin extends Plugin {
     const anchored = buildAnchoredBlock(blockSrc, link, idToWrite);
 
     if (anchored !== blockSrc) {
+      // Located again inside process(), on the data being written: the note
+      // may have moved on since it was read, and a marker written from a
+      // stale position is worse than no marker at all.
+      let placed = false;
       await this.processFile(sourceFile, (data) => {
-        const at = data.indexOf(blockSrc);
-        if (at === -1) return data;
-        return data.slice(0, at) + anchored + data.slice(at + blockSrc.length);
+        const spots = blockOccurrences(data, blockSrc);
+        if (spots.length !== 1) return data;
+        placed = true;
+        const { at, len } = spots[0];
+        return spliceAnchored(data, at, len, blockSrc, anchored);
       });
+      if (!placed) {
+        throw new Error('the source note changed while the linknote was being saved; the marker was not written');
+      }
     }
 
     return { file: noteFile, sourceFile, blockId: wantBlockId ? blockId : '', headingText };
@@ -2319,6 +2938,9 @@ class LinknotePlugin extends Plugin {
       bodyYaml: toYamlBlock(body),
       selection: snap.text,
       selectionQuote: snap.text.split('\n').map((l) => '> ' + l).join('\n'),
+      // Safe to put in a property: the passage may run to several lines, or
+      // hold a colon or a hash.
+      selectionYaml: toYamlBlock(snap.text),
       source,
       sourceBlock,
       sourceName: sourceFile.basename,
@@ -2379,14 +3001,12 @@ class LinknotePlugin extends Plugin {
     return `${base}-${n}.md`;
   }
 
+  /**
+   * Every write to an existing note goes through here. process() reads and
+   * writes as one step, so nothing typed between a read and a write is lost.
+   */
   async processFile(file, fn) {
-    if (typeof this.app.vault.process === 'function') {
-      return await this.app.vault.process(file, fn);
-    }
-    const data = await this.app.vault.read(file);
-    const next = fn(data);
-    if (next !== data) await this.app.vault.modify(file, next);
-    return next;
+    return await this.app.vault.process(file, fn);
   }
 }
 
@@ -2397,7 +3017,7 @@ class LinknotePlugin extends Plugin {
 /**
  * The linknotes of whatever note is in front, listed in the order they appear
  * in it. The cards answer "what is written here"; this answers "what has been
- * written about this note, and where". On a phone it is the only answer, since
+ * written about this note, and where". On mobile it is the only answer, since
  * cards there have nowhere to go.
  */
 class LinknoteListView extends ItemView {
@@ -2460,7 +3080,7 @@ class LinknoteRemoveModal extends Modal {
     const { contentEl } = this;
     this.modalEl.addClass('lkn-modal');
     contentEl.empty();
-    contentEl.createEl('h3', { text: 'Remove this linknote?' });
+    this.setTitle('Remove this linknote?');
 
     const list = contentEl.createEl('ul', { cls: 'lkn-remove-list' });
     list.createEl('li', {
@@ -2500,7 +3120,7 @@ class LinknoteRemoveModal extends Modal {
   }
 }
 
-/** One block's linknotes, as a sheet. What a marker opens on a phone. */
+/** One block's linknotes, as a sheet. What a marker opens on mobile. */
 class LinknoteSheet extends Modal {
   constructor(app, plugin, sourceFile, entries) {
     super(app);
@@ -2512,7 +3132,7 @@ class LinknoteSheet extends Modal {
   onOpen() {
     this.modalEl.addClass('lkn-sheet');
     this.contentEl.empty();
-    this.contentEl.createEl('h3', { text: 'Linknotes' });
+    this.setTitle('Linknotes');
     const list = this.contentEl.createDiv({ cls: 'lkn-list' });
     this.plugin.renderLinknoteRows(list, this.sourceFile, this.entries, () => this.close());
   }
@@ -2537,7 +3157,7 @@ class LinknoteModal extends Modal {
     if (mobile) modalEl.addClass('lkn-modal-mobile');
     contentEl.empty();
 
-    contentEl.createEl('h3', { text: 'New linknote' });
+    this.setTitle('New linknote');
 
     // On mobile the on-screen keyboard takes roughly half the screen, so Save
     // has to sit above the fold. Everything below it may be out of reach.
@@ -2563,14 +3183,14 @@ class LinknoteModal extends Modal {
     bodyInput.placeholder = 'Markdown is supported.';
 
     const suggest = contentEl.createDiv({ cls: 'lkn-suggest' });
-    suggest.style.display = 'none';
+    suggest.hide();
 
     let matches = [];
     let active = 0;
     let range = null;
 
     const closeSuggest = () => {
-      suggest.style.display = 'none';
+      suggest.hide();
       matches = [];
       range = null;
     };
@@ -2588,7 +3208,8 @@ class LinknoteModal extends Modal {
           pick(tag);
         });
       });
-      suggest.style.display = matches.length ? 'block' : 'none';
+      if (matches.length) suggest.show();
+      else suggest.hide();
     };
 
     const pick = (tag) => {
@@ -2739,6 +3360,7 @@ const TEMPLATE_VARIABLES = [
   ['{{bodyYaml}}', 'the note you typed, as a YAML block scalar, safe to put in a property'],
   ['{{selection}}', 'the selected text'],
   ['{{selectionQuote}}', 'the selected text, every line prefixed with "> "'],
+  ['{{selectionYaml}}', 'the selected text, as a YAML block scalar, safe to put in a property'],
   ['{{source}}', 'link to the source note'],
   ['{{sourceName}}', 'name of the source note'],
   ['{{sourcePath}}', 'path of the source note'],
@@ -2769,7 +3391,9 @@ class LinknoteSettingTab extends PluginSettingTab {
       .setDesc('Where new linknotes are created. Created if missing. Default: ' + DEFAULT_SETTINGS.folder)
       .addText((t) =>
         t.setValue(s.folder).onChange(async (v) => {
-          s.folder = v.trim() || DEFAULT_SETTINGS.folder;
+          // safeFolder refuses a path that climbs out of the vault, so a typo
+          // like ../Documents cannot send new notes outside it.
+          s.folder = safeFolder(v) || DEFAULT_SETTINGS.folder;
           if (typeof renderPreview === 'function') renderPreview();
           await this.plugin.saveSettings();
         })
@@ -3015,10 +3639,10 @@ class LinknoteSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Card text colour')
+      .setName('Card text color')
       .setDesc(
         'The first four follow your theme, so they stay readable when you switch between light ' +
-        'and dark. A custom colour does not. Default: Normal'
+        'and dark. A custom color does not. Default: Normal'
       )
       .addDropdown((d) => {
         d.addOption('normal', 'Normal');
@@ -3046,7 +3670,7 @@ class LinknoteSettingTab extends PluginSettingTab {
       .setName('Card placement')
       .setDesc(
         'In the margin, the text column is narrowed to make room, which is what a margin note costs. ' +
-        'A narrow pane and a phone fall back to inline whichever is chosen. Default: In the margin'
+        'A narrow pane falls back to inline whichever is chosen. On mobile no cards are drawn at all. Default: In the margin'
       )
       .addDropdown((d) => {
         d.addOption('margin', 'In the margin');
@@ -3089,7 +3713,7 @@ class LinknoteSettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl).setName('Behaviour').setHeading();
+    new Setting(containerEl).setName('Behavior').setHeading();
 
     new Setting(containerEl)
       .setName('Show the floating button')
@@ -3139,6 +3763,16 @@ module.exports.blockIdOfLine = blockIdOfLine;
 module.exports.removeAnchor = removeAnchor;
 module.exports.markerMatch = markerMatch;
 module.exports.markerOfLink = markerOfLink;
+module.exports.blockOccurrences = blockOccurrences;
+module.exports.spliceAnchored = spliceAnchored;
+module.exports.markerBlockOf = markerBlockOf;
+module.exports.quotedSelectionOf = quotedSelectionOf;
+module.exports.selectionShown = selectionShown;
+module.exports.runInText = runInText;
+module.exports.collapseWithMap = collapseWithMap;
+module.exports.sanitizeSettings = sanitizeSettings;
+module.exports.safeFolder = safeFolder;
+module.exports.linkDisplayText = linkDisplayText;
 module.exports.toggleTaskLine = toggleTaskLine;
 module.exports.tagQueryAt = tagQueryAt;
 module.exports.applyTagPick = applyTagPick;

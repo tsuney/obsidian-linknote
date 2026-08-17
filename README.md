@@ -58,9 +58,11 @@ The linknote is built from a template you control, frontmatter included. The shi
 
 ```markdown
 ---
+type: Linknote
 created: {{date}} {{time}}
 source: "{{sourceBlock}}"
 author: {{author}}
+selection: {{selectionYaml}}
 body: {{bodyYaml}}
 ---
 > [!NOTE]- {{titleShort}}... {{sourceBlock}}
@@ -85,6 +87,7 @@ Available variables:
 | `{{bodyYaml}}` | the same, as a YAML block scalar, safe to put in a property |
 | `{{selection}}` | the selected text |
 | `{{selectionQuote}}` | the selected text, every line prefixed with `> ` |
+| `{{selectionYaml}}` | the selected text, as a YAML block scalar, safe to put in a property |
 | `{{source}}` | link to the source note |
 | `{{sourceName}}` | name of the source note |
 | `{{sourcePath}}` | path of the source note |
@@ -98,7 +101,7 @@ Available variables:
 | `{{marker}}` | the marker character set in settings; useful when two devices are set to different ones |
 | `{{summary}}` | source note name and a short excerpt |
 
-Five presets ship with the plugin — **Minimal**, **Just a callout**, **With the source embed**, **With the quoted selection** and **Detailed**. Pick the closest one under Settings → Linknote → Load a preset, then rewrite it. They are plain English starting points; the plugin has no opinion about the language you write in, and no layout of its own beyond the template you set.
+Five presets ship with the plugin — **Minimal — your note, with the source folded above**, **Just a callout**, **With the source embed**, **With the quoted selection** and **Detailed — properties, sections, source line**. Pick the closest one under Settings → Linknote → Load a preset, then rewrite it. They are plain English starting points; the plugin has no opinion about the language you write in, and no layout of its own beyond the template you set.
 
 The same variables work in the filename template. Runs of separators left by an empty variable are cleaned up, so `{{sourceName}}_{{anchor}}` reads correctly even where there is no anchor.
 
@@ -112,19 +115,23 @@ Both are drawn as the note is rendered. **Nothing extra is written to your notes
 
 ### The list in the sidebar
 
-**Show the linknotes in this note** — from the command palette, or the ribbon icon — opens a list of every linknote the note in front carries, in the order they appear in it. Each row is headed the same way a card is — the marker, then who wrote it and when — followed by the passage it is attached to and then the note itself. Pressing the passage goes to it; pressing the row opens the linknote.
+**Show the linknotes in this note** — from the command palette, or the ribbon icon — opens a list of every linknote the note in front carries, in the order they appear in it. Each row is headed the same way a card is — the marker, then who wrote it and when — followed by the words the linknote is about, and then the note itself. Pressing that passage goes to it in the source. Pressing the passage goes to it; pressing the row opens the linknote.
 
-The cards answer "what is written here". The list answers "what has been written about this note, and where". On a phone it is the main answer, since a card has nowhere to go there.
+The cards answer "what is written here". The list answers "what has been written about this note, and where". On mobile it is the main answer, since a card has nowhere to go there.
 
 ### Cards
 
-Turn on **Show linknotes as cards** and each linknote is drawn beside the passage it annotates, headed by the marker it was written with, then who wrote it and when. That line opens the full note; hovering it shows the file name. The marker is read from the link in your note rather than from a property, so it is the character actually used — which on a second device set to a different one tells you at a glance where the note came from.
+Turn on **Show linknotes as cards** and each linknote is drawn beside the passage it annotates, headed by the marker it was written with, then who wrote it and when, then the words it is about on one line. Anchors are per block, so two linknotes on one paragraph are told apart by that line and nothing else; the whole passage is on hover. That line opens the full note; hovering it shows the file name. The marker is read from the link in your note rather than from a property, so it is the character actually used — which on a second device set to a different one tells you at a glance where the note came from.
 
-A margin note needs a margin, and Obsidian does not leave one: the text column is centred with 70–150px either side, which no card fits into. So a note that carries cards has its text column narrowed and pushed left, and the cards live in the space that frees. That is what a margin note costs, and it applies only to notes that have linknotes. Where the pane is too narrow to afford it the cards go under the block they belong to instead, and **Card placement** can be set to that inline form permanently. **On a phone there are no cards at all**: there is no margin to use, and inline cards interrupt the reading. Tapping a marker there opens a sheet with that block's linknotes.
+A margin note needs a margin, and Obsidian does not leave one: the text column is centred with 70–150px either side, which no card fits into. So a note that carries cards has its text column narrowed and pushed left, and the cards live in the space that frees. That is what a margin note costs, and it applies only to notes that have linknotes. Where the pane is too narrow to afford it the cards go under the block they belong to instead, and **Card placement** can be set to that inline form permanently. **On mobile there are no cards at all** — tablets included: there is no margin to use, and inline cards interrupt the reading. Tapping a marker there opens a sheet with that block's linknotes.
 
 The cards of one block are gathered behind a single rail. Where a group has to be pushed down to clear the one above it, a thin line traces the distance back up to the block it belongs to. A block shows three cards at a time and a card shows six lines, both settings; the rest is reached by scrolling.
 
 Press the **–** on any card to stow them all. Each shrinks to a strip beside its passage, so you can still see which passages carry a note, and the text takes the room back. Pressing any strip brings them back, as does the command **Show or stow the linknote cards**. The state is remembered.
+
+Press that line and the words are pointed at in the text beside the card. Nothing is written to your note and nothing in Obsidian's rendered page is altered: the range is handed to the browser's own highlight registry, which colours it for a few seconds and then lets go. A passage spanning bold text or a link highlights correctly for the same reason. **The anchor is still the block** — the recorded words only say which part of it was selected, and where the note has since been revised so those words are gone, pressing does nothing but say so. The same works from a sidebar row, after it jumps to the passage.
+
+The words a linknote is about come from its `selection` property, and, for a linknote written without one, from the quote the shipped templates keep it in. Nothing is guessed from the source note: what is shown is what the linknote recorded when it was made.
 
 The text on a card comes from the section under the **body heading** — `Linknote` by default. Edit the linknote and the card follows, without reopening the note it sits in. A linknote with no such heading falls back to its `body` property, and then to its whole contents.
 
@@ -161,12 +168,12 @@ The note is the original and the property is a copy of it. **Editing the propert
 | Marker style | Chip | a chip, or an ordinary link |
 | Mark the annotated block | on | a thin rule beside blocks that carry a linknote |
 | Show linknotes as cards | off | draws each linknote beside the passage it annotates |
-| Cards shown per block | 3 | any beyond that are reached by scrolling the group; 0 shows them all |
 | Card width | 240px | the room made for a margin card follows |
 | Card height | 6 lines | how much a card shows before it scrolls |
+| Cards shown per block | 3 | any beyond that are reached by scrolling the group; 0 shows them all |
 | Card text size | 100 | percentage of Obsidian's small interface text |
-| Card text colour | Normal | Normal, Muted, Faint and Accent follow the theme; a custom colour does not |
-| Card placement | In the margin | a narrow pane and a phone fall back to inline either way |
+| Card text color | Normal | Normal, Muted, Faint and Accent follow the theme; a custom color does not |
+| Card placement | In the margin | a narrow pane falls back to inline either way; on mobile no cards are drawn at all |
 | Body heading | `Linknote` | the heading marking your own note inside a linknote |
 | Write the body property from the note | on | the note wins; an edit made to the property is overwritten |
 | Show the floating button | on | turn off for hotkey-only use |
@@ -191,8 +198,10 @@ Headings are a case of their own. Obsidian has no block ID for a heading, and ap
 - Inside a callout or a blockquote, the anchor attaches to that line rather than to the callout as a whole.
 - A heading is referenced by its heading anchor rather than a block ID. Rename the heading later and the reference goes stale — unlike a block ID, which survives edits.
 - If two blocks in a note have exactly the same text, or two list items do, Linknote stops instead of picking one.
-- Cards are drawn in Reading view only, and the tag list is built by walking the vault's file caches the first time it is needed.
-- Removal stops rather than guesses. If the source note links to the same linknote from more than one place, Linknote will not choose which marker to take out, and says so.
+- A linknote anchored in two separate blocks of the same note gets one card, not two: cards are deduplicated per note, as the sidebar list is.
+- Cards are drawn in Reading view only, and never on mobile — tablets included. The list in the sidebar and the sheet a marker opens are the answer there.
+- The tag list is built by walking the vault's file caches the first time it is needed.
+- Removal stops rather than guesses. If the source note links to the same linknote from more than one place, or if the source note changed while the confirmation was open, Linknote removes nothing and says why.
 
 ## Multiple windows
 
@@ -210,6 +219,41 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.15.1
+
+- The passage a linknote is about is shaded and in quotation marks, on cards and on sidebar rows alike. It was set in the same face as the note itself, so on a card the two ran together and neither could be told from the other. The shading is the theme's accent colour at low opacity, so it follows whatever theme you use.
+
+### 0.15.0
+
+- **Cards and sidebar rows show the words the linknote is about.** Anchors are per block, so two linknotes on one paragraph looked identical; now each carries the passage it was made from. Read from a new `selection` property, and for linknotes written before it existed, from the quote the shipped templates keep the passage in — so older linknotes show it too.
+- The shipped template records `type: Linknote` and `selection:`. Added `{{selectionYaml}}`. **Existing settings are untouched** — this changes what a fresh install starts with, and what the first preset loads.
+
+### 0.14.8
+
+- A marker on a heading is drawn up into the heading line more reliably. The move was attempted once, on the frame after the block was rendered; if the block was not yet in the document, nothing tried again and the marker stayed on its own line. It is now attempted per marker rather than per rendered block — so a later pass over the view can also do it — and retried a few times.
+
+### 0.14.7
+
+- One card per linknote in a view. Another plugin may render the same list item twice — the Tasks plugin does — and each copy carried its own marker, so one linknote ended up with two identical cards while the sidebar correctly showed one. The extra is now cleared once everything is on screen.
+
+### 0.14.6
+
+- A marker that goes on a line of its own now gets a blank line after it as well as before. A heading written straight above its list left the marker glued to the list, which made it part of that block: it could not be drawn up beside the heading, and it read as part of the list.
+- One card per marker, whichever way the block is redrawn. A marker could end up with two identical cards while the sidebar correctly showed one.
+- Cards are no longer drawn inside cards. A card's contents are rendered markdown too, and the pass that rebuilds cards was descending into them.
+
+### 0.14.5
+
+- **A block ID written on its own line is no longer destroyed.** Obsidian's own form for a table or a code block puts `^id` on the line below the block. Linknote did not recognise it, appended the marker after it and added a second ID — which silently broke every link pointing at that block. The marker now goes on the text and the existing ID stays where it is.
+- **A blank line that is not empty separates blocks again.** A separator line holding a space or a tab, and any note saved with CRLF line endings, ran two paragraphs together, so the marker could land on the paragraph below the one selected.
+- **A stale selection can no longer be anchored twice.** Saving a second linknote from a selection that had already been anchored wrote the marker into the middle of the line and stranded the first block ID. Blocks are now matched whole lines at a time, and the position is checked again at the moment of writing.
+- Removing a linknote refuses when one line holds two links to it, and prefers the marker over a mention of the same note in your prose.
+- A block ID referenced only from another linknote's properties is no longer stripped.
+- Cards are drawn for linknotes only, so the delete button cannot reach a note this plugin does not own; and removal checks the folder again before anything is trashed.
+- Settings read back from `data.json` are checked before use: a folder that would climb out of the vault is refused, and a value of the wrong type falls back to the default.
+- Disabling the plugin now puts every open note back as it was — cards, gutters, classes and a marker moved up into a heading.
+- Rendered card contents belong to a child of their own and are released when the card is redrawn, rather than accumulating until the plugin unloads.
 
 ### 0.14.4
 

@@ -45,10 +45,15 @@ function domNode(tag) {
     children: [],
     _classes: new Set(),
     _text: '',
+    _attrs: {},
     parentElement: null,
   };
   n.ownerDocument = { createElement: (t) => domNode(t) };
-  n.classList = { add: (c) => n._classes.add(c), contains: (c) => n._classes.has(c) };
+  n.classList = {
+    add: (c) => n._classes.add(c),
+    remove: (c) => n._classes.delete(c),
+    contains: (c) => n._classes.has(c),
+  };
   n.appendChild = (k) => {
     if (k.parentElement) {
       const i = k.parentElement.children.indexOf(k);
@@ -69,10 +74,29 @@ function domNode(tag) {
     if (o && o.text) d._text = o.text;
     return n.appendChild(d);
   };
+  n.remove = () => {
+    if (!n.parentElement) return;
+    const i = n.parentElement.children.indexOf(n);
+    if (i !== -1) n.parentElement.children.splice(i, 1);
+    n.parentElement = null;
+  };
+  n.descendants = function* () {
+    for (const c of n.children.slice()) {
+      yield c;
+      yield* c.descendants();
+    }
+  };
+  // Only what the tests need: a single class selector.
+  n.querySelectorAll = (sel) => {
+    const cls = String(sel).replace(/^\./, '');
+    return Array.from(n.descendants()).filter((d) => d._classes.has(cls));
+  };
+  n.querySelector = (sel) => n.querySelectorAll(sel)[0] || null;
+  n.getAttribute = (k) => (k in n._attrs ? n._attrs[k] : null);
   n.createDiv = (o) => made('div', o);
   n.createEl = (t, o) => made(t, o);
   n.setText = (t) => { n._text = t; };
-  n.setAttribute = () => {};
+  n.setAttribute = (k, v) => { n._attrs[k] = v; };
   n.addEventListener = () => {};
   return n;
 }
@@ -135,6 +159,7 @@ function makeApp(files) {
     metadataCache: {
       _blocks: new Map(),   // path -> Set of block ids
       _links: new Map(),    // path -> array of link targets, as written
+      _fmLinks: new Map(),  // the same, for links written in properties
       _handlers: [],
       getFirstLinkpathDest(target, from) {
         return handles.get(target + '.md') || handles.get(target) || null;
@@ -142,15 +167,25 @@ function makeApp(files) {
       getFileCache(f) {
         const ids = this._blocks.get(f.path);
         const links = this._links.get(f.path);
-        if (!ids && !links) return null;
+        const fmLinks = this._fmLinks.get(f.path);
+        if (!ids && !links && !fmLinks) return null;
         const blocks = {};
         for (const id of ids || []) blocks[id] = { id };
-        return { blocks, links: (links || []).map((link) => ({ link })) };
+        return {
+          blocks,
+          links: (links || []).map((link) => ({ link })),
+          frontmatterLinks: (fmLinks || []).map((link) => ({ link })),
+        };
       },
       /** Pretends another note in the vault links somewhere. */
       indexLink(file, target) {
         if (!this._links.has(file.path)) this._links.set(file.path, []);
         this._links.get(file.path).push(target);
+      },
+      /** The same, for a link written in a property rather than the body. */
+      indexFrontmatterLink(file, target) {
+        if (!this._fmLinks.has(file.path)) this._fmLinks.set(file.path, []);
+        this._fmLinks.get(file.path).push(target);
       },
       on(name, cb) {
         const ref = { name, cb };
@@ -234,8 +269,8 @@ async function main() {
     eq(
       'the linknote renders the default template',
       note,
-      '---\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook#^' + id + ']]"\n' +
-        'author:\nbody: |-\n  Confirmed with Finance.\n---\n' +
+      '---\ntype: Linknote\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook#^' + id + ']]"\n' +
+        'author:\nselection: |-\n  the tenth business day\nbody: |-\n  Confirmed with Finance.\n---\n' +
         '> [!NOTE]- Close date... [[Team handbook#^' + id + ']]\n> the tenth business day\n\n' +
         '## Linknote\nConfirmed with Finance.\n'
     );
@@ -567,7 +602,7 @@ async function main() {
   console.log('\n15. a long selection with no title keeps the date in the filename');
   {
     const src = 'Doc.md';
-    const selection = '設定が空の既定値になっていたら、data.json が読まれていません。その場合は報告してください。';
+    const selection = '保存先のフォルダ名と日付の書式をもう一度確認し、必要であれば設定を初期値に戻してからお試しください。';
     const app = makeApp({ [src]: '# Doc\n\n' + selection + '\n' });
     const p = makePlugin(app, {
       folder: 'Annotations',
@@ -836,7 +871,7 @@ async function main() {
       app: { workspace: { openLinkText() {} } },
       readLinknote: async (f) => {
         await new Promise((r) => setTimeout(r, 1));
-        return { author: 'Tsune', created: '2026-08-17', text: 'body of ' + f.basename };
+        return { author: 'A. Reader', created: '2026-08-17', text: 'body of ' + f.basename };
       },
       confirmRemoval() {},
     };
@@ -853,7 +888,7 @@ async function main() {
     check('the row is headed by its marker', head.children[0]._classes.has('lkn-list-mark'));
     eq('and the marker is the one the link carries', head.children[0]._text, '📱');
     check('then who and when', head.children[1]._classes.has('lkn-list-meta'));
-    eq('who and when, in that order', head.children[1]._text, 'Tsune · 2026-08-17');
+    eq('who and when, in that order', head.children[1]._text, 'A. Reader · 2026-08-17');
 
     // A linknote written without a marker alias simply has no first cell.
     await render.call(ctx, target, source, [{ file: entries[0].file, passage: 'p', blockId: 'b' }]);
@@ -864,6 +899,110 @@ async function main() {
     await render.call(ctx, target, source, []);
     eq('the empty message stands alone', target.children.length, 1);
     check('and it is the empty message', target.children[0]._classes.has('lkn-list-empty'));
+  }
+
+  console.log('\n30. a block ID a linknote references from its properties is kept');
+  {
+    const src = 'Team handbook.md';
+    const before = '# Team handbook\n\nWe review the roster every quarter.\n';
+    const app = makeApp({ [src]: before });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'roster', 2, 2);
+    const made = await p.createLinknote(snap, { title: 'Roster', body: 'why quarterly' });
+    const id = app._store.get(src).match(/\^([a-z0-9]{6})/)[1];
+
+    // A second linknote on the same block, written from a template that puts
+    // the reference in a property and nowhere else.
+    const other = await app.vault.create('Linknotes/Second.md',
+      '---\nsource: "[[Team handbook#^' + id + ']]"\n---\n');
+    app.metadataCache.indexFrontmatterLink(other, 'Team handbook#^' + id);
+
+    const plan = await p.planRemoval(made.sourceFile, made.file);
+    check('a plan was made', plan.ok === true, '    reason: ' + plan.reason);
+    check('the block ID stays, because a property still points at it', plan.dropBlockId === false);
+  }
+
+  console.log('\n31. a block ID on its own line is not destroyed');
+  {
+    const src = 'Doc.md';
+    const before = '# Doc\n\nA pinned paragraph.\n^keepme\n\nSomething else.\n';
+    const app = makeApp({ [src]: before });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'A pinned paragraph.', 2, 3);
+    const made = await p.createLinknote(snap, { title: 'Pinned', body: 'b' });
+
+    eq('the marker goes on the text and the ID stays where it was',
+      app._store.get(src),
+      '# Doc\n\nA pinned paragraph. [[Pinned|†]]\n^keepme\n\nSomething else.\n');
+    eq('and the existing ID is the one referenced', made.blockId, 'keepme');
+    check('the linknote points at it', app._store.get(made.file.path).includes('#^keepme'));
+  }
+
+  console.log('\n32. a stale selection cannot be anchored twice');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: '# Doc\n\nThe paragraph to annotate.\n' });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+
+    // The same snapshot used twice, as the float button does when the
+    // selection has gone: after the first write its blockSrc is stale.
+    const snap = makeSnapshot(app, src, 'The paragraph to annotate.', 2, 2);
+    await p.createLinknote(snap, { title: 'First', body: 'a' });
+    const afterFirst = app._store.get(src);
+
+    let failed = '';
+    try {
+      await p.createLinknote(snap, { title: 'Second', body: 'b' });
+    } catch (e) {
+      failed = String(e.message || e);
+    }
+    check('the second attempt is refused', !!failed, '    got no error');
+    check('and says the note has changed', failed.indexOf('changed') !== -1, '    got: ' + failed);
+    eq('the source is exactly as the first write left it', app._store.get(src), afterFirst);
+  }
+
+  console.log('\n33. a heading written straight above its list');
+  {
+    const src = 'Doc.md';
+    const app = makeApp({ [src]: '# Doc\n\n## Background\n1. first\n2. second\n' });
+    const p = makePlugin(app, { filenameTemplate: '{{title}}' });
+    await p.loadSettings();
+    const snap = makeSnapshot(app, src, 'Background', 2, 2);
+    await p.createLinknote(snap, { title: 'On the heading', body: 'b' });
+
+    eq('the marker sits alone, with a blank line on either side',
+      app._store.get(src),
+      '# Doc\n\n## Background\n\n[[On the heading|†]]\n\n1. first\n2. second\n');
+  }
+
+  console.log('\n34. two copies of one list item get one card between them');
+  {
+    const view = domNode('div');
+    const make = (path) => {
+      const li = view.createDiv({ cls: 'lkn-has-card' });
+      const stack = li.createDiv({ cls: 'lkn-card-stack' });
+      const card = stack.createDiv({ cls: 'lkn-card' });
+      card.setAttribute('data-lkn-path', path);
+      return { li, stack, card };
+    };
+    // What the Tasks plugin leaves behind: the same item rendered twice.
+    const first = make('Linknotes/A.md');
+    const second = make('Linknotes/A.md');
+    const other = make('Linknotes/B.md');
+
+    const p = makePlugin(makeApp({}), {});
+    await p.loadSettings();
+    p.dedupeCards(view);
+
+    eq('one card is left for the repeated linknote',
+      view.querySelectorAll('lkn-card').filter((c) => c.getAttribute('data-lkn-path') === 'Linknotes/A.md').length, 1);
+    check('the first one is the one kept', first.card.parentElement === first.stack);
+    check('the second stack went with its card', second.stack.parentElement === null);
+    check('and its host is no longer marked', !second.li._classes.has('lkn-has-card'));
+    check('a different linknote is untouched', other.card.parentElement === other.stack);
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

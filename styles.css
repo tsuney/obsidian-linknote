@@ -511,6 +511,43 @@ body.is-mobile .markdown-rendered li.lkn-anchored::before {
   background-color: var(--background-modifier-hover);
 }
 
+/*
+ * The words the linknote is about. Shaded and in quotes, so it cannot be read
+ * as part of the note: on a card the two sit one above the other, and without
+ * a difference in appearance there is nothing to tell them apart.
+ */
+.lkn-card .lkn-card-quote {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  line-height: 1.5;
+  margin-bottom: 6px;
+  padding: 0 5px;
+  border-radius: var(--radius-s);
+  /* The theme's own accent, thinned right down. The ==highlight== yellow was
+     too loud for something that appears on every card. */
+  background-color: hsla(var(--accent-h, 254), var(--accent-s, 80%), var(--accent-l, 68%), 0.13);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pressing it points at those words in the text beside the card. */
+.lkn-card .lkn-card-quote {
+  cursor: pointer;
+}
+
+.lkn-card .lkn-card-quote:hover {
+  color: var(--text-normal);
+}
+
+.lkn-card .lkn-card-quote::before {
+  content: '\201C';
+}
+
+.lkn-card .lkn-card-quote::after {
+  content: '\201D';
+}
+
 /* Removal is not undoable in place, so its button says so on hover. */
 .lkn-card .lkn-card-remove:hover {
   color: var(--text-error);
@@ -598,18 +635,33 @@ body.lkn-cards-collapsed .lkn-card:hover {
   background-color: var(--background-modifier-hover);
 }
 
-/* The passage the note is attached to, which also jumps to it. */
+/* The passage the note is about, which also jumps to it. Shaded and quoted,
+ * the same way a card shows it. */
 .lkn-list .lkn-list-passage {
   color: var(--text-muted);
   margin-top: 2px;
-  border-left: 2px solid var(--background-modifier-border);
-  padding-left: 8px;
   margin-bottom: 4px;
+  padding: 0 5px;
+  border-radius: var(--radius-s);
+  /* The theme's own accent, thinned right down. The ==highlight== yellow was
+     too loud for something that appears on every card. */
+  background-color: hsla(var(--accent-h, 254), var(--accent-s, 80%), var(--accent-l, 68%), 0.13);
+}
+
+.lkn-list .lkn-list-passage {
+  cursor: pointer;
+}
+
+.lkn-list .lkn-list-passage::before {
+  content: '\201C';
+}
+
+.lkn-list .lkn-list-passage::after {
+  content: '\201D';
 }
 
 .lkn-list .lkn-list-passage:hover {
   color: var(--text-accent);
-  border-left-color: var(--interactive-accent);
 }
 
 /* Who and when, with the row's own remove button beside it. */
@@ -667,4 +719,14 @@ body.is-mobile .lkn-list .lkn-list-remove {
 
 body.is-mobile .lkn-sheet {
   max-height: 70vh;
+}
+
+/*
+ * The words a linknote is about, pointed at inside the text. Painted through
+ * the browser's highlight registry, so nothing in the note or in Obsidian's
+ * rendered tree is altered — and it fades of its own accord.
+ */
+::highlight(lkn-hit) {
+  background-color: hsla(var(--accent-h, 254), var(--accent-s, 80%), var(--accent-l, 68%), 0.4);
+  color: var(--text-normal);
 }

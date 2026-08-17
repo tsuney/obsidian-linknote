@@ -172,7 +172,7 @@ eq('bytes: nothing fits', clampBytes('あ', 2), '');
 console.log('\nthe filename that was truncated in the field');
 {
   // No title typed, so the whole selected sentence becomes the title.
-  const selection = '設定が空の既定値になっていたら、data.json が読まれていません。その場合は報告してください。';
+  const selection = '保存先のフォルダ名と日付の書式をもう一度確認し、必要であれば設定を初期値に戻してからお試しください。';
   const template = '補足 {{title}} {{date}}';
   const date = '2026-08-12-Wednesday';
   // Old behaviour cut the assembled name at 60 characters, landing inside the date.
@@ -249,8 +249,19 @@ eq('an escaped markdown link is matched',
   eq('an unrelated link is left alone', r.line, 'See [[Another note]] here.');
   check('and nothing is reported', !r.removed);
 }
-eq('only the first match goes',
-  m.removeLinkFromLine('[[Note_abc123|†]] and [[Note_abc123|†]]', NAMES).line, ' and [[Note_abc123|†]]');
+{
+  // Two markers to the same note on one line: neither is picked.
+  const r = m.removeLinkFromLine('[[Note_abc123|†]] and [[Note_abc123|†]]', NAMES);
+  check('two markers on a line: nothing is removed', !r.removed);
+  eq('and the count says why', r.count, 2);
+  eq('the line is returned untouched', r.line, '[[Note_abc123|†]] and [[Note_abc123|†]]');
+}
+{
+  // A marker and a prose link to the same note: the marker is the small one.
+  const r = m.removeLinkFromLine('See [[Note_abc123]] for detail. [[Note_abc123|†]]', NAMES);
+  check('the marker is found', r.removed);
+  eq('and the prose link survives', r.line, 'See [[Note_abc123]] for detail.');
+}
 eq('the block ID is read back', m.blockIdOfLine('A sentence. ^abc123'), 'abc123');
 eq('no block ID, no answer', m.blockIdOfLine('A sentence.'), '');
 
@@ -420,14 +431,15 @@ console.log('\nthe shipped default template');
     bodyYaml: m.toYamlBlock('Confirmed with Finance.\nTwice.'),
     summary: 'Team handbook — the tenth business day',
     selectionQuote: '> the tenth business day',
+    selectionYaml: m.toYamlBlock('the tenth business day'),
     titleShort: 'Close is the tenth business day',
     body: 'Confirmed with Finance.\nTwice.',
   };
   eq(
     'renders frontmatter, the folded source and the note',
     tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars)),
-    '---\ncreated: 2026-08-12 09:05\nsource: "[[Team handbook#^k3n8v1]]"\nauthor: A. Reader\n' +
-      'body: |-\n  Confirmed with Finance.\n  Twice.\n---\n' +
+    '---\ntype: Linknote\ncreated: 2026-08-12 09:05\nsource: "[[Team handbook#^k3n8v1]]"\nauthor: A. Reader\n' +
+      'selection: |-\n  the tenth business day\nbody: |-\n  Confirmed with Finance.\n  Twice.\n---\n' +
       '> [!NOTE]- Close is the tenth business day... [[Team handbook#^k3n8v1]]\n> the tenth business day\n\n' +
       '## Linknote\nConfirmed with Finance.\nTwice.\n'
   );
@@ -442,12 +454,13 @@ console.log('\nthe shipped default with an empty note and no author');
     bodyYaml: '',
     summary: 'Team handbook — the tenth business day',
     selectionQuote: '> the tenth business day',
+    selectionYaml: '',
     titleShort: 'Close date',
     body: '',
   };
   const out = tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars));
   // Empty properties are valid YAML nulls; what matters is that nothing dangles.
-  check('the empty properties are left as nulls', out.includes('\nauthor:\nbody:\n'), '    out: ' + out);
+  check('the empty properties are left as nulls', out.includes('\nauthor:\nselection:\nbody:\n'), '    out: ' + out);
   check('the frontmatter still closes', out.split('---\n').length >= 3, '    out: ' + out);
   check('no unresolved variable', !/\{\{[a-z]/i.test(out), '    out: ' + out);
 }
@@ -467,7 +480,8 @@ console.log('\ntemplate presets');
   const vars = {
     date: '2026-08-12', time: '09:05', source: '[[Team handbook]]', sourceName: 'Team handbook',
     sourcePath: 'Team handbook.md', sourceBlock: '[[Team handbook#^k3n8v1]]', title: 'Close date', body: 'Confirmed.', selection: 'the tenth business day',
-    selectionQuote: '> the tenth business day', embed: '![[Team handbook#^k3n8v1]]', blockId: 'k3n8v1',
+    selectionQuote: '> the tenth business day', selectionYaml: '|-\n  the tenth business day',
+    embed: '![[Team handbook#^k3n8v1]]', blockId: 'k3n8v1',
     author: 'A. Reader', summary: 'Team handbook — the tenth business day',
     titleShort: 'Close date', bodyQuote: '> Confirmed.', bodyYaml: '|-\n  Confirmed.',
   };
@@ -706,6 +720,160 @@ console.log('\ntwo different linknotes on one heading both move');
   eq('both markers sit in the heading', inHeading.length, 2);
   check('they are in source order',
     inHeading[0] === first.link && inHeading[1] === second.link);
+}
+
+console.log('\nfinding a block by whole lines, not by prefix');
+{
+  const doc = 'The paragraph to annotate. [[A|†]] ^u8f82g\n\nOther.\n';
+  eq('a stale selection no longer matches its own anchored line',
+    m.blockOccurrences(doc, 'The paragraph to annotate.').length, 0);
+  eq('the whole line does match', m.blockOccurrences(doc, 'The paragraph to annotate. [[A|†]] ^u8f82g').length, 1);
+
+  const spaced = m.blockOccurrences('Text here.  \n\nNext.\n', 'Text here.');
+  eq('trailing spaces are part of the match', spaced.length, 1);
+  eq('and are counted in its length', spaced[0].len, 12);
+
+  eq('two identical blocks are both reported',
+    m.blockOccurrences('Same.\n\nSame.\n', 'Same.').length, 2);
+  eq('a block at the very end, with no closing newline',
+    m.blockOccurrences('One.\n\nLast.', 'Last.').length, 1);
+  eq('a fragment inside a line is not a block',
+    m.blockOccurrences('A long sentence here.\n', 'long sentence').length, 0);
+}
+
+console.log('\nan own-line marker gets a blank line after it as well as before');
+{
+  const put = (doc, block) => {
+    const spot = m.blockOccurrences(doc, block)[0];
+    const anchored = m.buildAnchoredBlock(block, LINK, '');
+    return m.spliceAnchored(doc, spot.at, spot.len, block, anchored);
+  };
+
+  eq('a heading written straight above its list',
+    put('## Heading\n1. item one\n2. item two\n', '## Heading'),
+    '## Heading\n\n' + LINK + '\n\n1. item one\n2. item two\n');
+
+  eq('a blank line already there is not doubled',
+    put('## Heading\n\n1. item one\n', '## Heading'),
+    '## Heading\n\n' + LINK + '\n\n1. item one\n');
+
+  eq('at the end of the note there is nothing to separate from',
+    put('## Heading', '## Heading'), '## Heading\n\n' + LINK);
+
+  // An inline anchor stays on its line, so nothing is inserted after it.
+  const doc = 'Para text.\nNext line.\n';
+  const spot = m.blockOccurrences(doc, 'Para text.\nNext line.')[0];
+  eq('an inline anchor is spliced as it always was',
+    m.spliceAnchored(doc, spot.at, spot.len, 'Para text.\nNext line.',
+      m.buildAnchoredBlock('Para text.\nNext line.', LINK, 'abc123')),
+    'Para text.\nNext line. ' + LINK + ' ^abc123\n');
+}
+
+console.log('\na block ID written on its own line survives');
+{
+  eq('it is read back', m.existingBlockId('A pinned paragraph.\n^keepme'), 'keepme');
+  eq('the marker goes on the text, the ID stays put',
+    m.buildAnchoredBlock('A pinned paragraph.\n^keepme', LINK, 'newid1'),
+    'A pinned paragraph. ' + LINK + '\n^keepme');
+  eq('a table keeps its ID last on the line',
+    m.buildAnchoredBlock('| A | B |\n| 1 | 2 |\n^tblid', LINK, 'newid1'),
+    '| A | B |\n| 1 | 2 |\n' + LINK + ' ^tblid');
+}
+
+console.log('\nblank lines that are not empty still separate blocks');
+{
+  eq('a separator holding a space', m.findBlockContaining('Alpha para.\n \nBravo para.\n', 'Alpha para.'), 'Alpha para.');
+  eq('a file saved with CRLF', m.findBlockContaining('Alpha para.\r\n\r\nBravo para.\r\n', 'Alpha para.'), 'Alpha para.');
+  eq('a separator holding a tab', m.findBlockContaining('Alpha para.\n\t\nBravo para.\n', 'Bravo para.'), 'Bravo para.');
+}
+
+console.log('\nsettings read back from data.json are not trusted');
+{
+  eq('a folder that climbs out of the vault is refused', m.safeFolder('../../Documents'), '');
+  eq('so is one hidden in the middle', m.safeFolder('A/../B'), '');
+  eq('a leading slash is dropped', m.safeFolder('/Linknotes/'), 'Linknotes');
+  eq('a plain folder is kept', m.safeFolder('Notes/Linknotes'), 'Notes/Linknotes');
+
+  const clean = m.sanitizeSettings({ folder: '../x', cardWidth: '300', showCards: 'yes', marker: 5, nope: 1 });
+  check('a bad folder is dropped, so the default stands', !('folder' in clean));
+  eq('a numeric string becomes a number', clean.cardWidth, 300);
+  eq('a truthy string becomes a boolean', clean.showCards, true);
+  check('a number where a string belongs is dropped', !('marker' in clean));
+  check('an unknown key is dropped', !('nope' in clean));
+  eq('nothing at all is not an error', JSON.stringify(m.sanitizeSettings(null)), '{}');
+}
+
+console.log('\nwhat a link shows');
+{
+  eq('a wikilink alias', m.linkDisplayText('[[Note|†]]'), '†');
+  eq('a wikilink with no alias', m.linkDisplayText('[[Note]]'), 'Note');
+  eq('a markdown link', m.linkDisplayText('[†](Note.md)'), '†');
+}
+
+console.log('\nfinding the passage inside its block');
+{
+  const raw = 'The quarterly close lands on\n the tenth business day.';
+  const run = m.runInText(raw, 'the tenth  business day');
+  check('a line break in the text is no obstacle', !!run);
+  eq('and the offsets point at the words', raw.slice(run.start, run.end).replace(/\s+/g, ' '), 'the tenth business day');
+
+  eq('a passage that is no longer there is refused', m.runInText(raw, 'the ninth business day'), null);
+  eq('an empty passage is refused', m.runInText(raw, '   '), null);
+
+  // The passage was recorded from rendered text, so it carries no markup.
+  eq('the whole block matches itself', m.runInText('Just one sentence.', 'Just one sentence.').start, 0);
+
+  const map = m.collapseWithMap('  a   b  ');
+  eq('leading space is dropped, inner runs become one', map.text, 'a b');
+  eq('and the map points back at the original', map.map[0], 2);
+}
+
+console.log('\nthe passage a linknote is about');
+{
+  const shipped = '---\ncreated: x\nselection: |-\n  the tenth business day\n---\n' +
+    '> [!NOTE]- Close date... [[Doc#^abc]]\n> the tenth business day\n\n## Linknote\nMy note.\n';
+  eq('the property wins when it is there',
+    m.selectionShown({ selection: 'the tenth business day' }, shipped, 'Linknote'), 'the tenth business day');
+
+  // Every linknote written before the property existed.
+  const older = '---\ncreated: x\n---\n> [!NOTE]- Close date\n> the tenth business day\n\n## Linknote\nMy note.\n';
+  eq('with no property, the quote above the body is read',
+    m.selectionShown(null, older, 'Linknote'), 'the tenth business day');
+  eq('the callout title is not the passage',
+    m.quotedSelectionOf(older, 'Linknote').indexOf('Close date'), -1);
+
+  const many = '---\n---\n> [!NOTE]- T\n> first line\n> second line\n\n## Linknote\nMy note.\n';
+  eq('a passage of several lines reads as one', m.quotedSelectionOf(many, 'Linknote'), 'first line second line');
+
+  const quoteInBody = '---\n---\n## Linknote\n> a quote I wrote myself\n';
+  eq('a quote inside the note itself is not the passage',
+    m.quotedSelectionOf(quoteInBody, 'Linknote'), '');
+
+  eq('nothing recorded, nothing shown', m.selectionShown(null, '---\n---\n\nJust text.\n', 'Linknote'), '');
+  eq('an empty property falls back to the quote',
+    m.selectionShown({ selection: '  ' }, older, 'Linknote'), 'the tenth business day');
+}
+
+console.log('\nthe block a marker has to itself');
+{
+  // The post-processor case: the marker alone in a paragraph.
+  const a = fakeEl('a', { text: '†', attrs: { href: 'Note.md' } });
+  const p = fakeEl('p');
+  p.append(a);
+  check('the paragraph is the block', m.markerBlockOf(a, '†') === p);
+
+  // The sweep case: the same paragraph inside Reading view's wrapper.
+  const wrap = fakeEl('div');
+  wrap.append(p);
+  const sizer = fakeEl('div', { classes: ['markdown-preview-sizer'] });
+  sizer.append(wrap);
+  check('the wrapper is climbed to, but not the sizer', m.markerBlockOf(a, '†') === wrap);
+
+  // A marker sharing its block with prose has no block of its own.
+  const mixed = fakeEl('p');
+  const b = fakeEl('a', { text: '†', attrs: { href: 'Note.md' } });
+  mixed.append(fakeEl('span', { text: 'Real prose. ' }), b);
+  check('a marker among prose is not alone', m.markerBlockOf(b, '†') === null);
 }
 
 console.log('\nhow much a link looks like a marker');
