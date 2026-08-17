@@ -461,6 +461,14 @@ body.is-mobile .markdown-rendered li.lkn-anchored::before {
   margin-bottom: 2px;
 }
 
+/* The marker the linknote was written with, ahead of who and when. */
+.lkn-card .lkn-card-mark,
+.lkn-list .lkn-list-mark {
+  flex: 0 0 auto;
+  font-size: 0.9em;
+  line-height: 1.2;
+}
+
 .lkn-card .lkn-card-title {
   flex: 1 1 auto;
   min-width: 0;

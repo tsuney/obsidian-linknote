@@ -708,5 +708,79 @@ console.log('\ntwo different linknotes on one heading both move');
     inHeading[0] === first.link && inHeading[1] === second.link);
 }
 
+console.log('\nhow much a link looks like a marker');
+{
+  eq('the configured character is exact', m.markerMatch('†', '†'), 'exact');
+  eq('surrounding space is ignored', m.markerMatch(' † ', '†'), 'exact');
+  eq('an emoji marker is exact too', m.markerMatch('🙆', '🙆'), 'exact');
+  eq('another emoji is a maybe', m.markerMatch('📱', '🙆'), 'maybe');
+  eq('an emoji counts as one character', m.markerMatch('📱📱📱📱', '🙆'), 'maybe');
+  eq('five is too many', m.markerMatch('📱📱📱📱📱', '🙆'), 'no');
+  eq('a short word is a maybe', m.markerMatch('note', '†'), 'maybe');
+  eq('prose with a space is not', m.markerMatch('see this', '†'), 'no');
+  eq('a long alias is not', m.markerMatch('Quarterly close', '†'), 'no');
+  eq('empty text is not', m.markerMatch('   ', '†'), 'no');
+  eq('with no marker set, short text is still a maybe', m.markerMatch('†', ''), 'maybe');
+}
+
+console.log('\nthe marker a link was written with');
+{
+  eq('the alias is the marker',
+    m.markerOfLink({ original: '[[Linknotes/A|📱]]', displayText: '📱' }), '📱');
+  eq('a dagger too',
+    m.markerOfLink({ original: '[[A#^b1|†]]', displayText: '†' }), '†');
+  eq('no alias, no marker',
+    m.markerOfLink({ original: '[[Linknotes/A]]', displayText: 'Linknotes/A' }), '');
+  eq('a long alias is not a marker',
+    m.markerOfLink({ original: '[[Linknotes/A|Quarterly close]]', displayText: 'Quarterly close' }), '');
+  eq('nothing at all', m.markerOfLink(null), '');
+}
+
+console.log('\na marker written on another device is still a marker');
+{
+  const decorate = m.prototype.decorateMarkers;
+  const settings = { marker: '🙆', markerStyle: 'chip', highlightAnchored: true, folder: 'Linknotes' };
+
+  const mine = fakeEl('a', { text: '🙆', attrs: { href: 'Linknotes/A.md' } });
+  const theirs = fakeEl('a', { text: '📱', attrs: { href: 'Linknotes/B.md' } });
+  const prose = fakeEl('a', { text: 'ok', attrs: { href: 'Elsewhere.md' } });
+  const p = fakeEl('p');
+  p.append(fakeEl('span', { text: 'A paragraph. ' }), mine, theirs, prose);
+
+  let attached = 0;
+  decorate.call({
+    settings,
+    ctxMap: new Map([[p, { sourcePath: 'Doc.md' }]]),
+    // Only the two links in the linknote folder resolve there.
+    pointsAtLinknote: (a) => String(a.getAttribute('href')).startsWith('Linknotes/'),
+    scheduleHeadingAttach: () => { attached++; },
+  }, p);
+
+  check('this device’s marker is decorated', mine._classes.has('lkn-marker'));
+  check('the other device’s marker is decorated too', theirs._classes.has('lkn-marker'));
+  check('a short link to an ordinary note is left alone', !prose._classes.has('lkn-marker'));
+  check('the block is flagged as anchored', p._classes.has('lkn-anchored'));
+  eq('two markers in a block: nothing is moved to a heading', attached, 0);
+}
+
+console.log('\na foreign marker alone in its block still reaches the heading');
+{
+  const decorate = m.prototype.decorateMarkers;
+  const a = fakeEl('a', { text: '📱', attrs: { href: 'Linknotes/B.md' } });
+  const p = fakeEl('p');
+  p.append(a);
+
+  let seen = null;
+  decorate.call({
+    settings: { marker: '🙆', markerStyle: 'chip', highlightAnchored: false, folder: 'Linknotes' },
+    ctxMap: new Map([[p, { sourcePath: 'Doc.md' }]]),
+    pointsAtLinknote: () => true,
+    scheduleHeadingAttach: (el, text) => { seen = text; },
+  }, p);
+
+  check('it is decorated', a._classes.has('lkn-marker'));
+  eq('the heading move is asked for with the text found, not the setting', seen, '📱');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

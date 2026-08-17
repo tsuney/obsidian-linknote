@@ -551,6 +551,51 @@ function cssEscape(value) {
   return String(value).replace(/["\\]/g, '\\$&');
 }
 
+/**
+ * The marker a link is written with, taken from the link itself rather than
+ * from any setting: the note may have been made on another device. Empty when
+ * the link carries no alias, or one too long to be a marker.
+ */
+function markerOfLink(link) {
+  const raw = String((link && link.original) || '');
+  const bar = raw.indexOf('|');
+  const alias = bar === -1 ? '' : raw.slice(bar + 1).replace(/\]+$/, '').trim();
+  const text = alias || String((link && link.displayText) || '').trim();
+  return markerMatch(text, '') === 'maybe' ? text : '';
+}
+
+/**
+ * Replaces everything in `target` with the children of `holder`, in one step.
+ * Nothing may be awaited between the emptying and the filling, or a second
+ * draw running at the same time appends its rows into a list the first has
+ * already refilled.
+ */
+function swapIn(target, holder) {
+  target.empty();
+  while (holder.firstChild) target.appendChild(holder.firstChild);
+}
+
+/**
+ * How much a link's visible text looks like a marker.
+ *
+ *   'exact' — it is the marker character this device is set to
+ *   'maybe' — small enough to be a marker rather than prose, so it is one if
+ *             it points into the linknote folder
+ *   'no'    — prose
+ *
+ * The second case is what lets a linknote made on another device be seen as
+ * one here. The marker is a setting, and two devices need not agree on it,
+ * but a link into the linknote folder means the same thing everywhere.
+ */
+function markerMatch(text, marker) {
+  const t = String(text == null ? '' : text).trim();
+  if (!t) return 'no';
+  const m = String(marker == null ? '' : marker).trim();
+  if (m && t === m) return 'exact';
+  if (/\s/.test(t)) return 'no';
+  return Array.from(t).length <= 4 ? 'maybe' : 'no';
+}
+
 function utf8Size(ch) {
   const c = ch.codePointAt(0);
   if (c < 0x80) return 1;
@@ -1026,7 +1071,6 @@ class LinknotePlugin extends Plugin {
   decorateMarkers(el) {
     const s = this.settings;
     const marker = String(s.marker || '').trim();
-    if (!marker) return;
 
     let links;
     try {
@@ -1035,9 +1079,23 @@ class LinknotePlugin extends Plugin {
       return;
     }
 
-    for (const a of links) {
-      if (String(a.textContent || '').trim() !== marker) continue;
+    const ctx = this.ctxMap.get(el);
+    const ctxPath = (ctx && ctx.sourcePath) || '';
 
+    // The marker text actually found, and how many were found. A block that
+    // holds one marker and nothing else belongs to the heading above it, and
+    // the marker there need not be this device's character.
+    let onlyText = '';
+    let count = 0;
+
+    for (const a of links) {
+      const text = String(a.textContent || '').trim();
+      const how = markerMatch(text, marker);
+      if (how === 'no') continue;
+      if (how === 'maybe' && !this.pointsAtLinknote(a, ctxPath)) continue;
+
+      count++;
+      onlyText = text;
       a.classList.add('lkn-marker');
       if (s.markerStyle === 'plain') a.classList.add('lkn-marker-plain');
 
@@ -1062,7 +1120,7 @@ class LinknotePlugin extends Plugin {
     }
 
     // A marker alone in its block belongs visually to the heading above it.
-    this.scheduleHeadingAttach(el, marker);
+    if (count === 1) this.scheduleHeadingAttach(el, onlyText);
   }
 
   /**
@@ -1213,6 +1271,9 @@ class LinknotePlugin extends Plugin {
       const card = stack.createDiv({ cls: 'lkn-card' });
       card.setAttribute('data-lkn-path', file.path);
       card.setAttribute('data-lkn-src', sourcePath);
+      // The marker as written here, so a card says which device wrote it
+      // without the note having to carry a property for it.
+      card.setAttribute('data-lkn-mark', String(a.textContent || '').trim());
       // Stowed, the card is a strip with nothing to press but itself.
       card.addEventListener('click', () => {
         if (this.settings.cardsCollapsed) this.toggleCardsCollapsed(false);
@@ -1262,6 +1323,8 @@ class LinknotePlugin extends Plugin {
     card.empty();
 
     const head = card.createDiv({ cls: 'lkn-card-head' });
+    const mark = card.getAttribute('data-lkn-mark') || '';
+    if (mark) head.createEl('span', { cls: 'lkn-card-mark', text: mark });
     // Who and when, rather than the file name: linknotes on one block differ
     // only by a trailing number, which told the reader nothing.
     const label = [author, created].filter(Boolean).join(' · ') || file.basename;
@@ -1371,7 +1434,13 @@ class LinknotePlugin extends Plugin {
         }
       }
 
-      out.push({ file: note, line, blockId: idMatch ? idMatch[1] : '', passage });
+      out.push({
+        file: note,
+        line,
+        blockId: idMatch ? idMatch[1] : '',
+        passage,
+        marker: markerOfLink(link),
+      });
     }
     return out;
   }
@@ -1402,22 +1471,35 @@ class LinknotePlugin extends Plugin {
    * Draws the rows shared by the sidebar and the sheet. onRemoved, when
    * given, is called after a row's linknote has actually been removed — the
    * sheet uses it to close itself, since what it was showing is gone.
+   *
+   * The rows are built away from the screen and put in place in one go.
+   * Three workspace events and the metadata cache can all ask for a redraw at
+   * once, and a draw that emptied the list and then waited on a file read had
+   * its rows appended after the next draw had already emptied and filled it.
+   * That is how a new linknote came to be listed twice until the note was
+   * reopened.
    */
   async renderLinknoteRows(target, sourceFile, entries, onRemoved) {
-    target.empty();
+    const doc = target.ownerDocument || document;
+    const holder = doc.createElement('div');
+
     if (!entries.length) {
-      target.createDiv({ cls: 'lkn-list-empty', text: 'No linknotes in this note.' });
+      holder.createDiv({ cls: 'lkn-list-empty', text: 'No linknotes in this note.' });
+      swapIn(target, holder);
       return;
     }
 
     for (const entry of entries) {
-      const row = target.createDiv({ cls: 'lkn-list-item' });
+      const row = holder.createDiv({ cls: 'lkn-list-item' });
 
       // Who and when first, so every row is headed the same way. The passage
       // is not always there — a heading anchor may leave nothing to quote.
       const info = await this.readLinknote(entry.file);
       const meta = [info.author, info.created].filter(Boolean).join(' · ');
       const head = row.createDiv({ cls: 'lkn-list-head' });
+      // The marker first, then who and when, so a row reads the same way as a
+      // card and two authors are told apart at a glance.
+      if (entry.marker) head.createDiv({ cls: 'lkn-list-mark', text: entry.marker });
       head.createDiv({ cls: 'lkn-list-meta', text: meta || entry.file.basename });
 
       const drop = head.createEl('button', { cls: 'lkn-list-remove', text: '×' });
@@ -1445,6 +1527,8 @@ class LinknotePlugin extends Plugin {
         this.app.workspace.openLinkText(entry.file.path, sourceFile.path, evt.metaKey || evt.ctrlKey);
       });
     }
+
+    swapIn(target, holder);
   }
 
   /**
@@ -1571,6 +1655,26 @@ class LinknotePlugin extends Plugin {
       return;
     }
     new LinknoteRemoveModal(this.app, this, plan, onRemoved).open();
+  }
+
+  /**
+   * True when a rendered link resolves to a note in the linknote folder.
+   * Asked only about links short enough to be a marker, so it costs a cache
+   * lookup on a handful of links per block rather than on all of them.
+   */
+  pointsAtLinknote(a, sourcePath) {
+    try {
+      // With no folder set every note is a linknote, which would make every
+      // short link a marker. Then only the marker character decides.
+      if (!String(this.settings.folder || '').replace(/\/+$/, '')) return false;
+      const raw = a.getAttribute('data-href') || a.getAttribute('href') || '';
+      const target = String(raw).split('#')[0];
+      if (!target) return false;
+      const file = this.app.metadataCache.getFirstLinkpathDest(target, sourcePath || '');
+      return !!file && this.isLinknote(file);
+    } catch (e) {
+      return false;
+    }
   }
 
   /** True for a note that lives in the linknote folder. */
@@ -2230,6 +2334,9 @@ class LinknotePlugin extends Plugin {
       date: formatDate(now, s.dateFormat),
       time: formatDate(now, 'HH:mm'),
       author: s.author,
+      // The marker this device is set to. Two devices need not agree on it,
+      // so a note can record which one it was written on.
+      marker: String(s.marker || '').trim(),
       summary: sourceFile.basename + ' — ' + excerpt + (snap.text.length > 40 ? '…' : ''),
     };
 
@@ -2324,6 +2431,11 @@ class LinknoteListView extends ItemView {
     const el = this.contentEl;
     el.addClass('lkn-list');
 
+    // Every redraw takes a ticket, and a draw that is no longer the latest
+    // gives up rather than putting stale rows on screen.
+    const ticket = (this.drawTicket || 0) + 1;
+    this.drawTicket = ticket;
+
     const file = this.app.workspace.getActiveFile();
     if (!file) {
       el.empty();
@@ -2332,6 +2444,7 @@ class LinknoteListView extends ItemView {
     }
 
     const entries = await this.plugin.linknotesOf(file);
+    if (this.drawTicket !== ticket) return;
     await this.plugin.renderLinknoteRows(el, file, entries, () => this.draw());
   }
 }
@@ -2638,6 +2751,7 @@ const TEMPLATE_VARIABLES = [
   ['{{date}}', 'creation date, using the date format below'],
   ['{{time}}', 'creation time, as HH:mm'],
   ['{{author}}', 'the author set below'],
+  ['{{marker}}', 'the marker character set below; useful when two devices use different ones'],
   ['{{summary}}', 'source note name and a short excerpt'],
 ];
 
@@ -3025,6 +3139,8 @@ module.exports.linkNamesFor = linkNamesFor;
 module.exports.removeLinkFromLine = removeLinkFromLine;
 module.exports.blockIdOfLine = blockIdOfLine;
 module.exports.removeAnchor = removeAnchor;
+module.exports.markerMatch = markerMatch;
+module.exports.markerOfLink = markerOfLink;
 module.exports.toggleTaskLine = toggleTaskLine;
 module.exports.tagQueryAt = tagQueryAt;
 module.exports.applyTagPick = applyTagPick;

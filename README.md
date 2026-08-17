@@ -97,6 +97,7 @@ Available variables:
 | `{{date}}` | creation date, using the configured date format |
 | `{{time}}` | creation time, as `HH:mm` |
 | `{{author}}` | the author set in settings |
+| `{{marker}}` | the marker character set in settings; useful when two devices are set to different ones |
 | `{{summary}}` | source note name and a short excerpt |
 
 Five presets ship with the plugin — **Minimal**, **Just a callout**, **With the source embed**, **With the quoted selection** and **Detailed**. Pick the closest one under Settings → Linknote → Load a preset, then rewrite it. They are plain English starting points; the plugin has no opinion about the language you write in, and no layout of its own beyond the template you set.
@@ -113,13 +114,13 @@ Both are drawn as the note is rendered. **Nothing extra is written to your notes
 
 ### The list in the sidebar
 
-**Show the linknotes in this note** — from the command palette, or the ribbon icon — opens a list of every linknote the note in front carries, in the order they appear in it. Each row is headed by who wrote it and when, then the passage it is attached to, then the note itself. Pressing the passage goes to it; pressing the row opens the linknote.
+**Show the linknotes in this note** — from the command palette, or the ribbon icon — opens a list of every linknote the note in front carries, in the order they appear in it. Each row is headed the same way a card is — the marker, then who wrote it and when — followed by the passage it is attached to and then the note itself. Pressing the passage goes to it; pressing the row opens the linknote.
 
 The cards answer "what is written here". The list answers "what has been written about this note, and where". On a phone it is the main answer, since a card has nowhere to go there.
 
 ### Cards
 
-Turn on **Show linknotes as cards** and each linknote is drawn beside the passage it annotates, headed by who wrote it and when. That line opens the full note; hovering it shows the file name.
+Turn on **Show linknotes as cards** and each linknote is drawn beside the passage it annotates, headed by the marker it was written with, then who wrote it and when. That line opens the full note; hovering it shows the file name. The marker is read from the link in your note rather than from a property, so it is the character actually used — which on a second device set to a different one tells you at a glance where the note came from.
 
 A margin note needs a margin, and Obsidian does not leave one: the text column is centred with 70–150px either side, which no card fits into. So a note that carries cards has its text column narrowed and pushed left, and the cards live in the space that frees. That is what a margin note costs, and it applies only to notes that have linknotes. Where the pane is too narrow to afford it the cards go under the block they belong to instead, and **Card placement** can be set to that inline form permanently. **On a phone there are no cards at all**: there is no margin to use, and inline cards interrupt the reading. Tapping a marker there opens a sheet with that block's linknotes.
 
@@ -181,6 +182,8 @@ The write-back does not use line numbers. It locates the block by matching its s
 
 Anchors are placed at block granularity, matching Obsidian's own block references. Tables, code blocks and math blocks take their anchor on the following line, since appending inline would break the syntax. In a list, the anchor attaches to the selected item rather than to the list as a whole.
 
+The marker character is a setting, and two devices need not agree on it. So a marker is recognised in two ways: it is written with this device's character, or it is a short link — four characters or fewer, no spaces — into your linknote folder. That second rule is why a linknote written on your phone still gets a card on your desktop, even when the two are set to different characters. A longer link into the folder is treated as ordinary prose and left alone.
+
 Headings are a case of their own. Obsidian has no block ID for a heading, and appending anything to the heading line would change its text and break every `[[Note#Heading]]` pointing at it. So the marker goes on the line below, and in Reading view it is drawn back up next to the heading, so it reads as though it were part of it. For the same reason `{{embed}}` becomes a plain link when the anchor is a heading: embedding `![[Note#Heading]]` pulls in the entire section, which for a top-level heading is most of the note.
 
 ## Known limitations
@@ -209,6 +212,19 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.14.3
+
+- Cards and sidebar rows are headed by the marker the linknote was written with, then the author and the date. Set two devices to different markers and it is obvious at a glance which wrote what.
+- Added `{{marker}}`, so a template can record the marker in a property of its own.
+
+### 0.14.2
+
+- A new linknote no longer appears twice in the sidebar. Three workspace events and the metadata cache can all ask the list to redraw at once, and a redraw that emptied the list and then waited on a file read had its rows appended after the next redraw had already refilled it. The rows are now built away from the screen and put in place in one step.
+
+### 0.14.1
+
+- A linknote written on another device is recognised here. The marker character is a per-device setting, and a marker was matched by that character alone, so a note anchored with a different one got no card and no chip — though it did appear in the sidebar, which has always gone by the link's target. Both now agree: a short link into the linknote folder is a marker whatever character it wears.
 
 ### 0.14.0
 

@@ -36,6 +36,47 @@ function eq(name, actual, expected) {
   check(name, actual === expected, '    actual  : ' + JSON.stringify(actual) + '\n    expected: ' + JSON.stringify(expected));
 }
 
+/* --------------------------------------------------------------- fake DOM */
+
+/** Just enough of an element for the list rows: no layout, no styling. */
+function domNode(tag) {
+  const n = {
+    tagName: String(tag || 'div').toUpperCase(),
+    children: [],
+    _classes: new Set(),
+    _text: '',
+    parentElement: null,
+  };
+  n.ownerDocument = { createElement: (t) => domNode(t) };
+  n.classList = { add: (c) => n._classes.add(c), contains: (c) => n._classes.has(c) };
+  n.appendChild = (k) => {
+    if (k.parentElement) {
+      const i = k.parentElement.children.indexOf(k);
+      if (i !== -1) k.parentElement.children.splice(i, 1);
+    }
+    k.parentElement = n;
+    n.children.push(k);
+    return k;
+  };
+  Object.defineProperty(n, 'firstChild', { get: () => n.children[0] || null });
+  n.empty = () => {
+    for (const c of n.children) c.parentElement = null;
+    n.children.length = 0;
+  };
+  const made = (t, o) => {
+    const d = domNode(t);
+    if (o && o.cls) d._classes.add(o.cls);
+    if (o && o.text) d._text = o.text;
+    return n.appendChild(d);
+  };
+  n.createDiv = (o) => made('div', o);
+  n.createEl = (t, o) => made(t, o);
+  n.setText = (t) => { n._text = t; };
+  n.setAttribute = () => {};
+  n.addEventListener = () => {};
+  return n;
+}
+
 /* ------------------------------------------------------------- fake vault */
 
 class FakeFile extends obsidian.TFile {
@@ -778,6 +819,51 @@ async function main() {
     check('the removal declined', done === false);
     eq('the edit survives untouched', app._store.get(src), 'One [[Side note|†]] here, edited.\n');
     check('nothing was trashed', app._trashed.length === 0);
+  }
+
+  console.log('\n29. the list: no doubled rows, and every row headed marker, author, date');
+  {
+    const render = LinknotePlugin.prototype.renderLinknoteRows;
+    const target = domNode('div');
+    const entries = [1, 2, 3].map((i) => ({
+      file: { basename: 'N' + i, path: 'Linknotes/N' + i + '.md' },
+      passage: 'passage ' + i,
+      blockId: 'b' + i,
+      marker: '📱',
+    }));
+    // Reading a linknote yields, which is where the two draws interleaved.
+    const ctx = {
+      app: { workspace: { openLinkText() {} } },
+      readLinknote: async (f) => {
+        await new Promise((r) => setTimeout(r, 1));
+        return { author: 'Tsune', created: '2026-08-17', text: 'body of ' + f.basename };
+      },
+      confirmRemoval() {},
+    };
+    const source = { path: 'Doc.md', basename: 'Doc' };
+
+    await Promise.all([
+      render.call(ctx, target, source, entries),
+      render.call(ctx, target, source, entries),
+    ]);
+    eq('three linknotes make three rows, not six', target.children.length, 3);
+
+    // Marker, then who and when: a row is headed like a card.
+    const head = target.children[0].children[0];
+    check('the row is headed by its marker', head.children[0]._classes.has('lkn-list-mark'));
+    eq('and the marker is the one the link carries', head.children[0]._text, '📱');
+    check('then who and when', head.children[1]._classes.has('lkn-list-meta'));
+    eq('who and when, in that order', head.children[1]._text, 'Tsune · 2026-08-17');
+
+    // A linknote written without a marker alias simply has no first cell.
+    await render.call(ctx, target, source, [{ file: entries[0].file, passage: 'p', blockId: 'b' }]);
+    const bare = target.children[0].children[0];
+    check('no marker, no cell for one', !bare.children[0]._classes.has('lkn-list-mark'));
+
+    // And an empty result replaces the rows rather than adding to them.
+    await render.call(ctx, target, source, []);
+    eq('the empty message stands alone', target.children.length, 1);
+    check('and it is the empty message', target.children[0]._classes.has('lkn-list-empty'));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
