@@ -63,16 +63,14 @@ source: "{{sourceBlock}}"
 author: {{author}}
 body: {{bodyYaml}}
 ---
-
-> [!NOTE]- {{titleShort}}
+> [!NOTE]- {{titleShort}}... {{sourceBlock}}
 {{selectionQuote}}
 
 ## Linknote
-
 {{body}}
 ```
 
-The passage you annotated sits in a folded callout, so what you wrote is what you see when you open the note.
+The passage you annotated sits in a folded callout whose title carries a link straight back to the anchored spot, so what you wrote is what you see when you open the note, and the source is one click away.
 
 The `Linknote` heading is not decoration. It is how a linknote says which part of itself is the note, as opposed to the quoted source — an explicit marker rather than a guess about layout. The cards read the section under it, and the `body` property is written from it.
 
@@ -212,6 +210,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 ```
 
 ## Changelog
+
+### 0.14.4
+
+- New shipped default template. The folded callout that holds the source now carries a link to the anchored block in its title, and the layout is tighter. **Existing settings are untouched** — this changes what a fresh install starts with, and what the first preset loads.
 
 ### 0.14.3
 

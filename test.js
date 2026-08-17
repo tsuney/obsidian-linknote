@@ -427,9 +427,9 @@ console.log('\nthe shipped default template');
     'renders frontmatter, the folded source and the note',
     tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars)),
     '---\ncreated: 2026-08-12 09:05\nsource: "[[Team handbook#^k3n8v1]]"\nauthor: A. Reader\n' +
-      'body: |-\n  Confirmed with Finance.\n  Twice.\n---\n\n' +
-      '> [!NOTE]- Close is the tenth business day\n> the tenth business day\n\n' +
-      '## Linknote\n\nConfirmed with Finance.\nTwice.\n'
+      'body: |-\n  Confirmed with Finance.\n  Twice.\n---\n' +
+      '> [!NOTE]- Close is the tenth business day... [[Team handbook#^k3n8v1]]\n> the tenth business day\n\n' +
+      '## Linknote\nConfirmed with Finance.\nTwice.\n'
   );
 }
 

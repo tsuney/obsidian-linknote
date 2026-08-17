@@ -38,12 +38,10 @@ source: "{{sourceBlock}}"
 author: {{author}}
 body: {{bodyYaml}}
 ---
-
-> [!NOTE]- {{titleShort}}
+> [!NOTE]- {{titleShort}}... {{sourceBlock}}
 {{selectionQuote}}
 
 ## Linknote
-
 {{body}}
 `;
 

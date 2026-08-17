@@ -235,9 +235,9 @@ async function main() {
       'the linknote renders the default template',
       note,
       '---\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook#^' + id + ']]"\n' +
-        'author:\nbody: |-\n  Confirmed with Finance.\n---\n\n' +
-        '> [!NOTE]- Close date\n> the tenth business day\n\n' +
-        '## Linknote\n\nConfirmed with Finance.\n'
+        'author:\nbody: |-\n  Confirmed with Finance.\n---\n' +
+        '> [!NOTE]- Close date... [[Team handbook#^' + id + ']]\n> the tenth business day\n\n' +
+        '## Linknote\nConfirmed with Finance.\n'
     );
     check('the other paragraph was left alone', source.includes('\nExpenses are filed weekly.\n'));
   }
