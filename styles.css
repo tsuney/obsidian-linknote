@@ -1,4 +1,11 @@
 /* Linknote — floating button */
+/*
+ * The accent colour is deliberate: this button appears over the text a moment
+ * after a selection, and has to read as this plugin's, not as part of the
+ * note. The element selector is there so that a theme styling every button
+ * does not quietly take it back.
+ */
+button.lkn-float-btn,
 .lkn-float-btn {
   position: fixed;
   z-index: var(--layer-popover, 30);
@@ -15,8 +22,15 @@
   white-space: nowrap;
 }
 
+button.lkn-float-btn:hover,
 .lkn-float-btn:hover {
   background-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+button.lkn-float-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 /*
@@ -154,6 +168,32 @@ body.is-mobile .lkn-modal-mobile .lkn-buttons {
 .lkn-modal .lkn-buttons button.mod-warning {
   background-color: var(--background-modifier-error);
   color: var(--text-on-accent);
+}
+
+/* The sidebar's search box and order, above the rows. */
+.lkn-list .lkn-list-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px 8px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lkn-list .lkn-list-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-ui-smaller);
+}
+
+.lkn-list .lkn-list-sort {
+  flex: 0 0 auto;
+  font-size: var(--font-ui-smaller);
+  max-width: 45%;
+}
+
+.lkn-list .lkn-list-rows {
+  /* The rows keep the padding the list had before the tools were added. */
+  padding-top: 4px;
 }
 
 /* Linknote — settings */

@@ -170,6 +170,7 @@ const DEFAULT_SETTINGS = {
   cardMaxLines: 6,
   cardsPerStack: 3,
   cardTextColour: 'normal',
+  listSort: 'position',
   cardTextColourCustom: '',
 };
 
@@ -1865,9 +1866,22 @@ class LinknotePlugin extends Plugin {
         evt.preventDefault();
         evt.stopPropagation();
         const block = card.closest && card.closest('.lkn-has-card');
-        if (!this.highlightNear(block, passage)) {
-          new Notice('Linknote: those words are no longer in this note.');
+        if (block && this.highlightNear(block, passage)) return;
+
+        // The block this card hangs off is not always the one on screen.
+        // Where another plugin re-renders a line — the Tasks plugin does —
+        // the copy the card was built against is left behind, detached from
+        // the page, and nothing can be found inside it. Rather than reason
+        // about which copy is which, fall back to exactly what the sidebar
+        // does: find the marker again in the note as it is now.
+        const source = this.app.vault.getAbstractFileByPath(sourcePath);
+        if (source instanceof TFile) {
+          this.laterHighlight(source, passage, 0, file, () => {
+            new Notice('Linknote: those words are no longer in this note.');
+          });
+          return;
         }
+        new Notice('Linknote: those words are no longer in this note.');
       };
       quote.addEventListener('click', point);
       quote.addEventListener('keydown', (evt) => {
@@ -2100,9 +2114,15 @@ class LinknotePlugin extends Plugin {
    * is the whole note allowed, since that lights up the first paragraph that
    * happens to carry the same words, which may not be the one meant.
    */
-  laterHighlight(file, passage, attempt, noteFile) {
+  laterHighlight(file, passage, attempt, noteFile, onFail) {
     const round = attempt || 0;
-    if (this.unloaded || round > 9) return;
+    if (this.unloaded) return;
+    if (round > 9) {
+      // Said once, at the end. Saying it on the first attempt would call a
+      // note that has simply not finished drawing a note that has changed.
+      if (typeof onFail === 'function') onFail();
+      return;
+    }
     const timer = window.setTimeout(() => {
       if (this.unloaded) return;
       let done = false;
@@ -2123,7 +2143,7 @@ class LinknotePlugin extends Plugin {
       } catch (e) {
         /* nothing is drawn yet */
       }
-      if (!done) this.laterHighlight(file, passage, round + 1, noteFile);
+      if (!done) this.laterHighlight(file, passage, round + 1, noteFile, onFail);
     }, round === 0 ? 120 : 300);
     this.register(() => window.clearTimeout(timer));
   }
@@ -3415,6 +3435,59 @@ class LinknotePlugin extends Plugin {
  * written about this note, and where". On mobile it is the only answer, since
  * cards there have nowhere to go.
  */
+/**
+ * Does one row match what was typed in the sidebar's search box?
+ *
+ * Every word has to appear somewhere in the row — author, note, passage or
+ * file name — so two words narrow rather than widen. Case is ignored; nothing
+ * else is interpreted, since a search box that quietly treats what you typed
+ * as a pattern is a search box that lies about what it found.
+ */
+function rowMatches(row, query) {
+  const q = String(query == null ? '' : query).trim().toLowerCase();
+  if (!q) return true;
+  if (!row) return false;
+  const hay = [row.author, row.text, row.selection, row.passage, row.name]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+  return q.split(/\s+/).every((word) => hay.indexOf(word) !== -1);
+}
+
+/**
+ * The order the sidebar lists linknotes in.
+ *
+ * The order in the note is the default and the tie-breaker for every other
+ * order, so rows never shuffle between two redraws that had nothing to
+ * separate them.
+ */
+function sortRows(rows, mode) {
+  const list = Array.prototype.slice.call(rows || []);
+  const settle = (compare) =>
+    list.sort((a, b) => compare(a, b) || (a.index || 0) - (b.index || 0));
+
+  if (mode === 'created') return settle((a, b) => (b.created || 0) - (a.created || 0));
+  if (mode === 'modified') return settle((a, b) => (b.modified || 0) - (a.modified || 0));
+  if (mode === 'author') {
+    return settle((a, b) => {
+      const x = String(a.author || '');
+      const y = String(b.author || '');
+      // A linknote with no author goes last rather than first: an empty name
+      // sorts before everything, which puts the least informative rows on top.
+      if (!x !== !y) return x ? -1 : 1;
+      return x.localeCompare(y, undefined, { sensitivity: 'base' });
+    });
+  }
+  return settle(() => 0);
+}
+
+const LIST_SORTS = [
+  ['position', 'In the note'],
+  ['created', 'Newest first'],
+  ['modified', 'Recently changed'],
+  ['author', 'By author'],
+];
+
 class LinknoteListView extends ItemView {
   constructor(leaf, plugin) {
     super(leaf);
@@ -3434,6 +3507,39 @@ class LinknoteListView extends ItemView {
   }
 
   async onOpen() {
+    const el = this.contentEl;
+    el.addClass('lkn-list');
+    el.empty();
+
+    // The search box and the order are built once and left alone. Redrawing
+    // them with the rows would take the caret out of the box on the first
+    // keystroke, and the box would be unusable.
+    this.query = '';
+    const tools = el.createDiv({ cls: 'lkn-list-tools' });
+
+    const search = tools.createEl('input', { cls: 'lkn-list-search', type: 'search' });
+    search.placeholder = 'Search these linknotes';
+    search.setAttribute('aria-label', 'Search the linknotes in this note');
+    search.addEventListener('input', () => {
+      this.query = search.value;
+      this.draw();
+    });
+
+    const sort = tools.createEl('select', { cls: 'dropdown lkn-list-sort' });
+    sort.setAttribute('aria-label', 'Order');
+    for (const [value, label] of LIST_SORTS) {
+      const option = sort.createEl('option', { text: label });
+      option.value = value;
+    }
+    sort.value = this.plugin.settings.listSort || DEFAULT_SETTINGS.listSort;
+    sort.addEventListener('change', async () => {
+      this.plugin.settings.listSort = sort.value;
+      await this.plugin.saveSettings();
+      this.draw();
+    });
+
+    this.rowsEl = el.createDiv({ cls: 'lkn-list-rows' });
+
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.draw()));
     this.registerEvent(this.app.workspace.on('file-open', () => this.draw()));
     this.registerEvent(this.app.metadataCache.on('changed', () => this.draw()));
@@ -3441,8 +3547,7 @@ class LinknoteListView extends ItemView {
   }
 
   async draw() {
-    const el = this.contentEl;
-    el.addClass('lkn-list');
+    const el = this.rowsEl || this.contentEl;
 
     // Every redraw takes a ticket, and a draw that is no longer the latest
     // gives up rather than putting stale rows on screen.
@@ -3458,7 +3563,41 @@ class LinknoteListView extends ItemView {
 
     const entries = await this.plugin.linknotesOf(file);
     if (this.drawTicket !== ticket) return;
-    await this.plugin.renderLinknoteRows(el, file, entries, () => this.draw());
+
+    // What the search and the order need: read once here, rather than again
+    // inside every comparison.
+    const rows = [];
+    for (let i = 0; i < entries.length; i += 1) {
+      const entry = entries[i];
+      const info = await this.plugin.readLinknote(entry.file);
+      const stat = entry.file.stat || {};
+      rows.push({
+        entry,
+        index: i,
+        author: info.author,
+        text: info.text,
+        selection: info.selection,
+        passage: entry.passage,
+        name: entry.file.basename,
+        created: stat.ctime || 0,
+        modified: stat.mtime || 0,
+      });
+    }
+    if (this.drawTicket !== ticket) return;
+
+    const found = rows.filter((row) => rowMatches(row, this.query));
+    if (!found.length && String(this.query || '').trim()) {
+      el.empty();
+      el.createDiv({
+        cls: 'lkn-list-empty',
+        text: 'Nothing here matches “' + String(this.query).trim() + '”.',
+      });
+      return;
+    }
+
+    const order = this.plugin.settings.listSort || DEFAULT_SETTINGS.listSort;
+    const wanted = sortRows(found, order).map((row) => row.entry);
+    await this.plugin.renderLinknoteRows(el, file, wanted, () => this.draw());
   }
 }
 
@@ -4322,14 +4461,14 @@ class LinknoteSettingTab extends PluginSettingTab {
 
       const sizeSetting = new Setting(containerEl)
         .setName('Card text size')
-        .setDesc('As a percentage of the size Obsidian uses for small interface text.');
+        .setDesc('As a percentage of the size Obsidian uses for small interface text. Above about 130% a narrow card holds very little, so widen the card to match.');
       const sizeLabel = this.showValue(
         sizeSetting,
         (Number(s.cardFontScale) || DEFAULT_SETTINGS.cardFontScale) + '%'
       );
       sizeSetting.addSlider((sl) =>
         sl
-          .setLimits(70, 130, 5)
+          .setLimits(70, 200, 5)
           .setValue(Number(s.cardFontScale) || DEFAULT_SETTINGS.cardFontScale)
           .setDynamicTooltip()
           .onChange(async (v) => {
@@ -4464,6 +4603,8 @@ module.exports.selectionShown = selectionShown;
 module.exports.runInText = runInText;
 module.exports.collapseWithMap = collapseWithMap;
 module.exports.sanitizeSettings = sanitizeSettings;
+module.exports.rowMatches = rowMatches;
+module.exports.sortRows = sortRows;
 module.exports.safeFolder = safeFolder;
 module.exports.linkDisplayText = linkDisplayText;
 module.exports.toggleTaskLine = toggleTaskLine;

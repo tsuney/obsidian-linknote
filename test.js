@@ -401,6 +401,36 @@ eq('matching ignores case', m.filterTags(TAGS, 'ALPHAB').join(','), 'alphabet');
 eq('the list is capped', m.filterTags(TAGS, '', 2).length, 2);
 eq('no match, no rows', m.filterTags(TAGS, 'zzz').length, 0);
 
+console.log('\nsearching the sidebar list');
+{
+  const row = { author: 'Tsune', text: 'PCR は三段階です', selection: '変性', name: 'Biology_abc123' };
+  check('an empty query keeps everything', m.rowMatches(row, '   '), '');
+  check('the author matches', m.rowMatches(row, 'tsune'), '');
+  check('the note matches', m.rowMatches(row, 'PCR'), '');
+  check('the passage matches', m.rowMatches(row, '変性'), '');
+  check('the file name matches', m.rowMatches(row, 'abc123'), '');
+  check('two words narrow rather than widen', m.rowMatches(row, 'tsune pcr'), '');
+  check('a word that is nowhere fails', !m.rowMatches(row, 'tsune ribosome'), '');
+  check('nothing to search is not a match', !m.rowMatches(null, 'x'), '');
+  check('a regular expression is taken literally', !m.rowMatches(row, 'p.r'), '');
+}
+
+console.log('\nordering the sidebar list');
+{
+  const rows = [
+    { index: 0, author: 'Ono', created: 300, modified: 100, name: 'a' },
+    { index: 1, author: '', created: 100, modified: 300, name: 'b' },
+    { index: 2, author: 'Abe', created: 200, modified: 200, name: 'c' },
+  ];
+  const names = (mode) => m.sortRows(rows, mode).map((r) => r.name).join('');
+  eq('the note order is the default', names('position'), 'abc');
+  eq('an unknown order falls back to it', names('whatever'), 'abc');
+  eq('newest first', names('created'), 'acb');
+  eq('most recently changed first', names('modified'), 'bca');
+  eq('by author, with the nameless last', names('author'), 'cab');
+  eq('the source array is left alone', rows.map((r) => r.name).join(''), 'abc');
+}
+
 console.log('\nshortening a title for a heading');
 eq('short titles are untouched', m.shortenTitle('Close date'), 'Close date');
 eq('whitespace is collapsed first', m.shortenTitle('Close   date\n again'), 'Close date again');

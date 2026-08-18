@@ -1,5 +1,20 @@
 # Changelog
 
+### 0.19.2
+
+- The diagnostic line 0.19.1 wrote to the developer console when a passage could not be found is gone; it was there to find the cause and the cause is fixed. No other change.
+
+### 0.19.1
+
+- Pressing the passage on a card attached to a task highlights it. The card can be left hanging off a copy of the line that another plugin has since replaced — the Tasks plugin re-renders task lines — and nothing can be found inside a block that is no longer in the page. Rather than reason about which copy is which, the card now falls back to exactly what the sidebar does, which was working all along: find the marker again in the note as it stands, wait for the view if it is still drawing, and say so only at the end.
+
+### 0.19.0
+
+- **The sidebar list has a search box and an order.** Type to narrow the list — every word has to appear in the author, the note, the passage or the file name, so two words narrow rather than widen — and choose between the order in the note (the default), newest first, recently changed, and by author. The order is remembered; what you typed is not. Rows with nothing to separate them keep the order they have in the note, so the list never shuffles under you.
+- **Card text size goes up to 200%.** It stopped at 130%, which is not enough on a large display.
+- The floating **Linknote** button holds the theme's accent colour even under a theme that styles every button, and shows a focus ring when reached from the keyboard.
+- Pressing the passage on a card attached to a task now highlights it. Where another plugin re-renders a line — the Tasks plugin does — the card could be left hanging off a copy that is no longer in the page; the marker is now looked up afresh in the pane, the way the sidebar does it.
+
 ### 0.18.3
 
 - The floating **Linknote** button no longer comes back after Save. Pressing the button raises a mouseup, and the check that mouseup schedules ran once the composer had already gone — finding the selection still standing, it drew the button again, where it sat until something was clicked. The selection is now let go once the linknote has been written, and the button stays away for a moment after the composer closes.

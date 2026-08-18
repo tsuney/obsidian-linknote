@@ -130,6 +130,8 @@ Both are drawn as the note is rendered. **Nothing extra is written to your notes
 
 **Show the linknotes in this note** — from the command palette, or the ribbon icon — opens a list of every linknote you are reading carries, in the order they appear in it. Each row is headed the same way a card is — the marker, then who wrote it and when — followed by the words the linknote is about, and then the note itself. Pressing the passage goes to it in the source; pressing the row opens the linknote.
 
+Above the rows are a search box and an order. Typing narrows the list: every word has to appear somewhere in the row — the author, the note, the passage, or the file name — so two words narrow rather than widen, and nothing you type is treated as a pattern. The order can be the one in the note (the default), newest first, recently changed, or by author; it is remembered between sessions, and rows with nothing to separate them keep the order they have in the note.
+
 The cards answer "what is written here". The list answers "what has been written about this note, and where". On mobile it is the main answer, since a card has nowhere to go there.
 
 ### Cards
@@ -221,10 +223,10 @@ Headings are a case of their own. Obsidian has no block ID for a heading, and ap
 - Inside a callout or a blockquote, the anchor attaches to that line rather than to the callout as a whole.
 - A heading is referenced by its heading anchor rather than a block ID. Rename the heading later and the reference goes stale — unlike a block ID, which survives edits.
 - If two blocks in a note have exactly the same text, or two list items do, Linknote stops instead of picking one.
-- A linknote anchored in two separate blocks of the same note gets one card, not two: cards are deduplicated per note, as the sidebar list is.
 - Cards are drawn in Reading view only, and never on mobile — tablets included. The list in the sidebar and the sheet a marker opens are the answer there.
 - One card per linknote in a view. Where a linknote is anchored in two separate blocks of one note, only the first gets a card; the sidebar lists it once, as it always has.
 - Pointing at a passage in the text needs the browser's highlight registry, which Obsidian has had for some time. Where it is missing, pressing the passage does nothing.
+- A long note is not all drawn at once, so a passage far from where you are reading has to be brought into the page before it can be pointed at. From the sidebar that is what the jump does; the plugin waits about three seconds for it, and gives up quietly rather than colouring the wrong words.
 - The tag list is built by walking the vault's file caches the first time it is needed.
 - Removal stops rather than guesses. If the source note links to the same linknote from more than one place, or if the source note changed while the confirmation was open, Linknote removes nothing and says why.
 
@@ -243,54 +245,22 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### 0.19.2
+
+- The diagnostic line 0.19.1 wrote to the developer console when a passage could not be found is gone; it was there to find the cause and the cause is fixed. No other change.
+
+### 0.19.1
+
+- Pressing the passage on a card attached to a task highlights it. The card can be left hanging off a copy of the line that another plugin has since replaced — the Tasks plugin re-renders task lines — and nothing can be found inside a block that is no longer in the page. Rather than reason about which copy is which, the card now falls back to exactly what the sidebar does, which was working all along: find the marker again in the note as it stands, wait for the view if it is still drawing, and say so only at the end.
+
+### 0.19.0
+
+- **The sidebar list has a search box and an order.** Type to narrow the list — every word has to appear in the author, the note, the passage or the file name, so two words narrow rather than widen — and choose between the order in the note (the default), newest first, recently changed, and by author. The order is remembered; what you typed is not. Rows with nothing to separate them keep the order they have in the note, so the list never shuffles under you.
+- **Card text size goes up to 200%.** It stopped at 130%, which is not enough on a large display.
+- The floating **Linknote** button holds the theme's accent colour even under a theme that styles every button, and shows a focus ring when reached from the keyboard.
+- Pressing the passage on a card attached to a task now highlights it. Where another plugin re-renders a line — the Tasks plugin does — the card could be left hanging off a copy that is no longer in the page; the marker is now looked up afresh in the pane, the way the sidebar does it.
+
 ### 0.18.3
 
 - The floating **Linknote** button no longer comes back after Save. Pressing the button raises a mouseup, and the check that mouseup schedules ran once the composer had already gone — finding the selection still standing, it drew the button again, where it sat until something was clicked. The selection is now let go once the linknote has been written, and the button stays away for a moment after the composer closes.
-
-### 0.18.2
-
-- **Esc with the tag list open really does keep the composer open now.** Which handler sees the key first is not the plugin's to decide — Obsidian watches for Esc in two places of its own — so instead of racing, all three ways in are covered and they agree: the key on its way down, the modal's scope, and the close itself. The first Esc puts the list away, the second closes the composer.
-- **A highlighted passage is scrolled to when it is off screen.** A long note is not all drawn at once, so from the sidebar the words were often painted where nobody could see them, or not found at all because that part of the note had not been drawn yet. The jump is given about three seconds to land, the linknote's own block is preferred throughout, and the passage is brought to the middle of the pane. A passage already on screen is left where it is.
-- A task inside a card starts at the card's edge, whether or not the list is wrapped by the renderer; nested lists keep their step in.
-- **Body heading** says in settings that `{{bodyHeading}}` in the template keeps the two in step, and that the body property is what is shown when the heading is not found — which is why changing the heading alone can look as though nothing happened.
-- The shipped template puts the body heading directly under the quoted passage, with no blank line between them.
-
-### 0.18.1
-
-- **Esc** in the composer is decided in one place: it puts the tag list away while the list is on screen, and closes the composer otherwise. Whether the list is open is read from the list itself rather than from the matches behind it, so a stale match can no longer swallow the key and leave the box unclosable.
-
-### 0.18.0
-
-- **Pressing the passage highlights it even when the marker sits on a line of its own.** After a table, a code block or a heading the marker has to go on its own line, and that line is a block containing nothing but the marker — so the words were looked for in a block that never held them and Linknote said they were gone. The search now widens to the blocks just above and then to the note.
-- The highlight no longer lands in the backlinks pane. Backlinks quote the same passage back, so from the sidebar the color could appear down there instead of in the text.
-- The **Linknote folder** field can be edited again. What was typed was corrected on every keystroke, so clearing the field snapped it back to the old name. It is corrected when you leave the field instead.
-- The settings screen stays where you left it. Turning cards on or off, or switching the card text color, redraws the tab, which used to throw the pane back to the top; and the color picker no longer closes itself on the first drag.
-- **Esc** with the tag list open puts the list away rather than closing the composer and losing what was typed.
-- The floating **Linknote** button goes the moment the composer opens. The selection is still there while the box is up, and the events that raise the button fire after the press that opened it, so it came back and hung over the composer until something cleared the selection.
-- **Create linknote from selection** asks for a selection instead of using the last one. With nothing selected — or with an image selected, which is no text — it used to annotate whatever had been read before.
-- Ticking a task in the text no longer disturbs the cards. Obsidian redraws that one list item, taking the card hanging off it, and nothing asked for it back until the note was reopened.
-- A task list at the top of a card starts at the card's edge, so a narrow card does not lose a third of its width to the indent.
-- New template variable **`{{bodyHeading}}`**, so the heading the template writes and the **Body heading** setting cannot drift apart. The shipped template uses it.
-
-### 0.17.2
-
-- A task in a linknote is a checkbox in the sidebar too. The rows showed the note as plain text, so `- [ ]` stayed as written and a tag stayed as `#tag`; they render the same markdown a card does.
-- Room for that checkbox inside a card. Obsidian draws it in the space a list's indent leaves, which inside a card was the card's own edge, so the box was cut in half.
-
-### 0.17.1
-
-- Turning cards back on shows them again. Everything is rebuilt by the pass that runs over the whole view, and that pass hung each card off the view itself rather than off its block, which put it out of sight. A card now finds its own block whichever way it is drawn.
-- Pressing the passage on a card highlights it again. The highlight was registered under one name and the stylesheet was still looking for the old one, so the range was painted with nothing.
-
-### 0.17.0
-
-- **Requires Obsidian 1.6.6.** Removing a linknote uses `trashFile`, which arrived in that version; on anything older the note could not be sent to the trash after its marker had already been taken out.
-- The settings screen is in the order the ideas arrive, grouped under five headings, and every change now shows at once. Turning cards on, switching the marker style, turning the rule beside annotated blocks on or off, and changing the body heading all used to wait for the note to be re-rendered. Turning cards off now takes them off the screen rather than leaving them until it is.
-- Clearer settings: **Add a link marker** says that the cards, the sidebar list and Remove all find a linknote by it; **Add a block ID** says what it writes and that a heading never gets one; **Marker character**, **Body heading**, **Open the linknote after creating it** and the card settings say what they do to the note or the screen. Sliders show their value, so it can be read without dragging them. The card settings appear only when cards are on, and never on mobile, where cards are not drawn.
-- Replacing the note template asks first when what is in the box is not one of the presets.
-- Custom card color is its own setting with a text field beside the swatch, instead of quietly switching the dropdown behind it.
-- The passage on a card and the rows in the sidebar can be reached and used from the keyboard.
-- Cleanup on unload is thorough: the highlight, the observers, the marks left on Obsidian's own elements, and every deferred pass. A pending pass no longer works on behalf of a plugin that has been disabled.
-- Popped-out windows place their cards on their own animation frames, so a popout keeps working while the main window is hidden.
-- A block that ends in trailing spaces gets its blank line after an own-line marker, as every other block already did.
 
