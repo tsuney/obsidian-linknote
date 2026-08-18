@@ -42,10 +42,18 @@ body: {{bodyYaml}}
 ---
 > [!NOTE]- {{titleShort}}... {{sourceBlock}}
 {{selectionQuote}}
-
-## Linknote
+## {{bodyHeading}}
 {{body}}
 `;
+
+// What the default template was in earlier versions. Kept so that a vault
+// carrying one of them is not asked whether its "own" template may be
+// replaced — it is the shipped one, only older.
+const LEGACY_NOTE_TEMPLATES = [
+  DEFAULT_NOTE_TEMPLATE.replace('## {{bodyHeading}}', '## Linknote'),
+  DEFAULT_NOTE_TEMPLATE.replace('{{selectionQuote}}\n##', '{{selectionQuote}}\n\n##'),
+  DEFAULT_NOTE_TEMPLATE.replace('{{selectionQuote}}\n## {{bodyHeading}}', '{{selectionQuote}}\n\n## Linknote'),
+];
 
 const CALLOUT_NOTE_TEMPLATE = `---
 created: {{date}}
@@ -176,6 +184,15 @@ const CARD_GAP = 24;
 const CARD_MIN_TEXT = 380;
 const CARD_STACK_GAP = 12;
 const LIST_VIEW_TYPE = 'linknote-list';
+// The highlight registry is one namespace per window, shared with every other
+// plugin and theme, so the key is spelled out in full.
+const HIGHLIGHT_KEY = 'linknote-passage';
+// What the passage search must never walk into: this plugin's own cards, and
+// the panes Obsidian hangs below a note, which quote the same words back.
+const SKIP_IN_SEARCH = '.lkn-card-stack, .embedded-backlinks, .backlink-pane, .search-result-container, .metadata-container';
+// A marker on a line of its own — after a table, a code block, a heading — is
+// a block by itself, so the words it is about are in a block above it.
+const HIGHLIGHT_LOOKBACK = 3;
 
 /** The gutter a card of this width needs, and the pane that can afford it. */
 function cardGutter(width) {
@@ -714,6 +731,33 @@ function filterTags(tags, query, limit) {
 }
 
 /**
+ * The block a card hangs on: the list item a marker sits in, or the top-level
+ * block Reading view wrapped it in.
+ *
+ * The fallback matters. A card is positioned against its host, so when the
+ * caller passes the whole view — which the sweep does — falling back to that
+ * hung the card off the view itself and put it off the side of the screen.
+ * Turning cards off and on again was enough to see it: everything is rebuilt
+ * by the sweep, and nothing came back.
+ */
+function hostBlockOf(a, fallback) {
+  try {
+    const li = a.closest && a.closest('li');
+    if (li) return li;
+
+    const sizer = a.closest && a.closest('.markdown-preview-sizer, .markdown-preview-view, .markdown-rendered');
+    if (sizer) {
+      let node = a.parentElement;
+      while (node && node.parentElement && node.parentElement !== sizer) node = node.parentElement;
+      if (node && node.parentElement === sizer) return node;
+    }
+  } catch (e) {
+    /* fall back */
+  }
+  return fallback;
+}
+
+/**
  * The block a marker has to itself, or null when the marker shares its block
  * with other text. Climbs while the ancestor holds nothing but the marker, so
  * the answer is the same whether the caller has the block in hand or the whole
@@ -782,7 +826,9 @@ function blockOccurrences(content, block) {
  */
 function spliceAnchored(data, at, len, blockSrc, anchored) {
   const text = String(data == null ? '' : data);
-  const ownLine = anchored.slice(String(blockSrc).length).startsWith('\n\n');
+  // Read from the result rather than by slicing at the old length: the block
+  // may have had trailing spaces, which buildAnchoredBlock trims away.
+  const ownLine = /\n\n[^\n]*$/.test(anchored);
   let rest = text.slice(at + len);
 
   if (ownLine && rest) {
@@ -903,6 +949,7 @@ function sampleFilenameVars(settings, now) {
     date: formatDate(now || new Date(), settings.dateFormat),
     time: formatDate(now || new Date(), 'HH:mm'),
     author: settings.author || '',
+    bodyHeading: settings.bodyHeading || DEFAULT_SETTINGS.bodyHeading,
     summary: 'Team handbook — the tenth business day',
   };
 }
@@ -1164,13 +1211,22 @@ class LinknotePlugin extends Plugin {
     this.floatBtn = null;
     this.hookedDocs = new WeakSet();
     this.tagCache = null;
+    this.resettleTimer = null;
+    this.composerOpen = false;
+    this.buttonMutedUntil = 0;
     this.relayoutPending = false;
     this.stackObservers = null;
 
     this.registerMarkdownPostProcessor((el, ctx) => {
-      this.ctxMap.set(el, ctx);
-      this.decorateMarkers(el);
-      this.renderCards(el, ctx);
+      // Guarded as a whole: anything thrown here would stop Obsidian drawing
+      // the rest of the section.
+      try {
+        this.ctxMap.set(el, ctx);
+        this.decorateMarkers(el);
+        this.renderCards(el, ctx);
+      } catch (e) {
+        console.error('[Linknote] rendering', e);
+      }
     });
 
     // The tag list is rebuilt on demand; this only marks it stale.
@@ -1185,7 +1241,15 @@ class LinknotePlugin extends Plugin {
     );
 
     // A note without linknotes must not keep the gutter the previous one had.
-    this.registerEvent(this.app.vault.on('modify', (file) => this.refreshCardsFor(file)));
+    this.registerEvent(
+      this.app.vault.on('modify', (file) => {
+        this.refreshCardsFor(file);
+        // Ticking a task in the text rewrites the note, and Obsidian redraws
+        // that one list item — taking the card hanging off it with it. Nothing
+        // else asks for it back, so a note being edited is settled again.
+        this.resettleSource(file);
+      })
+    );
     // These events fire before the view has drawn. Running once at that moment
     // decided "no cards here" and dropped the gutter, and since Obsidian then
     // restored the cards from its own cache without the post processor running,
@@ -1193,19 +1257,7 @@ class LinknotePlugin extends Plugin {
     // Order matters: the placement of each stack is decided first, and the
     // gutter is settled from the result. The other way round read the state
     // left by the previous pass, dropped the gutter, and put it straight back.
-    const settle = () => {
-      this.applyCardStyle();
-      this.sweepCards();
-      this.refitCards();
-      this.syncCardLayout();
-      this.scheduleRelayout();
-    };
-    const settleSoon = () => {
-      settle();
-      this.laterCardPass(120);
-      this.laterCardPass(500);
-      this.laterCardPass(1200);
-    };
+    const settleSoon = () => this.settleCards();
     this.registerEvent(this.app.workspace.on('file-open', settleSoon));
     this.registerEvent(this.app.workspace.on('layout-change', settleSoon));
     this.registerEvent(this.app.workspace.on('active-leaf-change', settleSoon));
@@ -1230,7 +1282,11 @@ class LinknotePlugin extends Plugin {
     this.addCommand({
       id: 'create-from-selection',
       name: 'Create linknote from selection',
-      callback: () => this.openComposer(this.captureSelectionAnywhere() || this.snapshot),
+      // The live selection only. Falling back to the last one looks helpful
+      // and is not: with nothing selected — or with an image selected, which
+      // is no text at all — it would quietly annotate whatever was read
+      // before, and the linknote would land on the wrong passage.
+      callback: () => this.openComposer(this.captureSelectionAnywhere()),
     });
 
     this.addSettingTab(new LinknoteSettingTab(this.app, this));
@@ -1249,14 +1305,36 @@ class LinknotePlugin extends Plugin {
       this.app.workspace.on('window-close', (workspaceWindow, win) => {
         const doc = (win && win.document) || (workspaceWindow && workspaceWindow.doc);
         if (this.floatBtn && this.floatBtn.doc === doc) this.floatBtn = null;
+        if (this.hitWindow === win) this.clearPassage();
+        try {
+          const observer = doc && this.stackObservers && this.stackObservers.get(doc);
+          if (observer) observer.disconnect();
+        } catch (e) {
+          /* it had none */
+        }
       })
     );
     this.registerEvent(this.app.workspace.on('layout-change', () => this.hookAllOpenDocuments()));
   }
 
   onunload() {
-    this.hideFloatingButton();
-    this.removeAllTraces();
+    // Set first: every deferred pass checks it, so nothing carries on working
+    // for a plugin that is no longer there.
+    this.unloaded = true;
+    if (this.resettleTimer) {
+      window.clearTimeout(this.resettleTimer);
+      this.resettleTimer = null;
+    }
+    try {
+      this.hideFloatingButton();
+    } catch (e) {
+      /* the button's window has gone */
+    }
+    try {
+      this.removeAllTraces();
+    } catch (e) {
+      /* one document failing must not skip the others */
+    }
   }
 
   /**
@@ -1290,11 +1368,18 @@ class LinknotePlugin extends Plugin {
           const home = a._lknHome;
           a._lknHome = null;
           if (home && home.appendChild && home.isConnected) home.appendChild(a);
+          // The marks this plugin left on Obsidian's own anchors. Without
+          // this, enabling the plugin again on an already-rendered note finds
+          // them still set and draws nothing.
+          a._lknCard = null;
+          a._lknDupe = false;
+          if (a.dataset) delete a.dataset.lknSheet;
         }
         for (const stack of Array.prototype.slice.call(doc.querySelectorAll('.lkn-card-stack'))) {
           for (const card of Array.prototype.slice.call(stack.querySelectorAll('.lkn-card'))) {
             this.dropCardChild(card);
           }
+          this.unobserveStack(stack);
           stack.remove();
         }
         for (const cls of gone) {
@@ -1307,6 +1392,8 @@ class LinknotePlugin extends Plugin {
         }
         if (doc.body) {
           doc.body.classList.remove('lkn-cards-collapsed');
+          doc.body.classList.remove('lkn-plain-marker');
+          doc.body.classList.remove('lkn-rule-anchored');
           for (const prop of props) doc.body.style.removeProperty(prop);
         }
       } catch (e) {
@@ -1483,8 +1570,9 @@ class LinknotePlugin extends Plugin {
         });
       }
 
-      if (!s.highlightAnchored) continue;
-      // A list item is a better unit to flag than the whole list.
+      // A list item is a better unit to flag than the whole list. The class
+      // goes on whether or not the rule is wanted: it says which blocks carry
+      // a linknote, and the stylesheet decides whether to draw anything.
       const host = (a.closest && a.closest('li')) || el;
       if (host && host.classList) host.classList.add('lkn-anchored');
     }
@@ -1515,7 +1603,7 @@ class LinknotePlugin extends Plugin {
       // above it cannot be reached. A single attempt that landed too early
       // left the marker on its own line for good.
       const run = (attempt) => {
-        if (!el.parentElement) return;
+        if (this.unloaded || !el.parentElement) return;
         if (this.attachMarkerToHeading(el, marker)) return;
         if (attempt >= 4) return;
         const again = () => run(attempt + 1);
@@ -1651,9 +1739,10 @@ class LinknotePlugin extends Plugin {
       // passes over the same rendered block cannot each add a card for it,
       // whichever host each decides to hang it on. parentElement rather than
       // isConnected: on the first pass the whole tree is still detached.
+      if (a._lknDupe) continue;
       if (a._lknCard && a._lknCard.parentElement) continue;
 
-      const host = (a.closest && a.closest('li')) || el;
+      const host = hostBlockOf(a, el);
       if (!host || !host.classList || !host.createDiv) continue;
       let already = null;
       try {
@@ -1723,7 +1812,7 @@ class LinknotePlugin extends Plugin {
     // Not isConnected: on the first draw the whole tree is still detached, and
     // bailing here is what left the card an empty box. Losing its host is the
     // real signal that the card is gone.
-    if (!card.parentElement) return;
+    if (this.unloaded || !card.parentElement) return;
     this.dropCardChild(card);
     card.empty();
 
@@ -1769,13 +1858,20 @@ class LinknotePlugin extends Plugin {
     if (passage) {
       const quote = card.createDiv({ cls: 'lkn-card-quote', text: passage });
       quote.setAttribute('title', passage + '\n(press to show it in the text)');
-      quote.addEventListener('click', (evt) => {
+      // A button in all but name: reachable by keyboard, and announced as one.
+      quote.setAttribute('role', 'button');
+      quote.setAttribute('tabindex', '0');
+      const point = (evt) => {
         evt.preventDefault();
         evt.stopPropagation();
         const block = card.closest && card.closest('.lkn-has-card');
-        if (!this.highlightPassage(block, passage)) {
-          new Notice('Linknote: those words are no longer in this block.');
+        if (!this.highlightNear(block, passage)) {
+          new Notice('Linknote: those words are no longer in this note.');
         }
+      };
+      quote.addEventListener('click', point);
+      quote.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Enter' || evt.key === ' ') point(evt);
       });
     }
 
@@ -1825,7 +1921,19 @@ class LinknotePlugin extends Plugin {
         continue;
       }
       const stack = card.parentElement;
+      // Remember which marker lost, or the next pass draws the card again and
+      // this one deletes it again — a flicker on every settle.
+      const host = stack && stack.parentElement;
+      if (host && host.querySelectorAll) {
+        for (const a of Array.prototype.slice.call(host.querySelectorAll('a.lkn-marker'))) {
+          if (a._lknCard === card) {
+            a._lknCard = null;
+            a._lknDupe = true;
+          }
+        }
+      }
       this.dropCardChild(card);
+      this.unobserveStack(stack);
       card.remove();
       if (stack && stack.classList && stack.classList.contains('lkn-card-stack')) {
         if (!stack.querySelector('.lkn-card')) {
@@ -1862,7 +1970,10 @@ class LinknotePlugin extends Plugin {
       const walker = doc.createTreeWalker(block, win.NodeFilter.SHOW_TEXT, {
         acceptNode: (node) => {
           const parent = node.parentElement;
-          if (parent && parent.closest && parent.closest('.lkn-card-stack')) {
+          // The cards this plugin drew, and the panes Obsidian hangs off the
+          // bottom of a note. Backlinks quote the passage verbatim, so without
+          // this the colour lands down there instead of in the text.
+          if (parent && parent.closest && parent.closest(SKIP_IN_SEARCH)) {
             return win.NodeFilter.FILTER_REJECT;
           }
           return win.NodeFilter.FILTER_ACCEPT;
@@ -1898,7 +2009,8 @@ class LinknotePlugin extends Plugin {
       range.setEnd(to.node, to.offset);
 
       this.clearPassage();
-      win.CSS.highlights.set('lkn-hit', new win.Highlight(range));
+      win.CSS.highlights.set(HIGHLIGHT_KEY, new win.Highlight(range));
+      this.showRange(range, win);
       this.hitWindow = win;
       // A pointer rather than a state: it goes by itself, so the reader is not
       // left with a stray colour on the page.
@@ -1910,15 +2022,89 @@ class LinknotePlugin extends Plugin {
   }
 
   /**
-   * The same, after a jump from the sidebar. The view has to draw before there
-   * is anything to paint, and how long that takes is not knowable, so it is
-   * tried a few times and then let go. The whole preview is searched rather
-   * than one block: the jump has already brought the right passage into view.
+   * Scrolls a highlighted passage into view when it is not already there.
+   *
+   * A colour painted on a part of the note that is off screen is a colour
+   * nobody sees — and from the sidebar that is the ordinary case, since the
+   * list shows linknotes from the whole note. A passage already on screen is
+   * left where it is: scrolling something the reader is looking at is worse
+   * than not scrolling at all.
    */
-  laterHighlight(file, passage, attempt) {
+  showRange(range, win) {
+    try {
+      const rect = range.getBoundingClientRect();
+      if (!rect || (!rect.height && !rect.width)) return;
+      const top = 48;
+      const bottom = (win.innerHeight || 0) - 48;
+      if (rect.top >= top && rect.bottom <= bottom) return;
+
+      let node = range.startContainer;
+      if (node && node.nodeType === 3) node = node.parentElement;   // 3 = TEXT_NODE
+      if (!node || typeof node.scrollIntoView !== 'function') return;
+      node.scrollIntoView({ block: 'center', inline: 'nearest' });
+    } catch (e) {
+      /* the view is mid-render; the colour is still painted */
+    }
+  }
+
+  /**
+   * The passage, looked for around the block rather than only inside it.
+   *
+   * A marker that had to go on a line of its own — the line after a table, a
+   * code block, a heading — is a rendered block containing nothing but the
+   * marker, so the words are not in it. Rather than give up, the blocks just
+   * above are tried, and then the pane as a whole. The anchor is unchanged:
+   * this only widens where the colour is allowed to look.
+   */
+  highlightNear(block, passage) {
+    if (!block) return false;
+    if (this.highlightPassage(block, passage)) return true;
+
+    let prev = null;
+    try {
+      prev = block.previousElementSibling;
+    } catch (e) {
+      prev = null;
+    }
+    for (let step = 0; step < HIGHLIGHT_LOOKBACK && prev; step += 1) {
+      if (this.highlightPassage(prev, passage)) return true;
+      try {
+        prev = prev.previousElementSibling;
+      } catch (e) {
+        prev = null;
+      }
+    }
+
+    let pane = null;
+    try {
+      pane = block.closest && block.closest('.markdown-preview-sizer, .markdown-preview-view, .markdown-rendered');
+    } catch (e) {
+      pane = null;
+    }
+    if (pane && pane !== block) return this.highlightPassage(pane, passage);
+    return false;
+  }
+
+  /**
+   * The same, after a jump from the sidebar.
+   *
+   * Two things have to happen before there is anything to paint, and neither
+   * is on a schedule this can know: the note has to open, and Obsidian has to
+   * draw the part of it the linknote is in. A long note is not all in the
+   * page at once — a passage many screens away exists only as a placeholder
+   * until the reader is taken there — so the jump is what makes the words
+   * findable in the first place. Hence: try, wait, try again, for about three
+   * seconds, and give up quietly rather than paint the wrong thing.
+   *
+   * The linknote's own block is preferred throughout. Only on the last rounds
+   * is the whole note allowed, since that lights up the first paragraph that
+   * happens to carry the same words, which may not be the one meant.
+   */
+  laterHighlight(file, passage, attempt, noteFile) {
     const round = attempt || 0;
-    if (round > 4) return;
-    window.setTimeout(() => {
+    if (this.unloaded || round > 9) return;
+    const timer = window.setTimeout(() => {
+      if (this.unloaded) return;
       let done = false;
       try {
         this.app.workspace.iterateAllLeaves((leaf) => {
@@ -1926,26 +2112,55 @@ class LinknotePlugin extends Plugin {
           const view = leaf && leaf.view;
           if (!view || !view.file || view.file.path !== file.path || !view.containerEl) return;
           const el = view.containerEl.querySelector('.markdown-preview-view');
-          if (el && this.highlightPassage(el, passage)) done = true;
+          if (!el) return;
+          const block = noteFile ? this.blockOfLinknote(el, noteFile) : null;
+          if (block) {
+            if (this.highlightNear(block, passage)) done = true;
+          } else if (!noteFile || round >= 7) {
+            if (this.highlightPassage(el, passage)) done = true;
+          }
         });
       } catch (e) {
         /* nothing is drawn yet */
       }
-      if (!done) this.laterHighlight(file, passage, round + 1);
-    }, round === 0 ? 120 : 250);
+      if (!done) this.laterHighlight(file, passage, round + 1, noteFile);
+    }, round === 0 ? 120 : 300);
+    this.register(() => window.clearTimeout(timer));
+  }
+
+  /** The rendered block carrying the marker for one linknote, or null. */
+  blockOfLinknote(view, noteFile) {
+    try {
+      for (const a of Array.prototype.slice.call(view.querySelectorAll('a.lkn-marker'))) {
+        // A marker shown in the backlinks pane below the note is not the one
+        // in the text, and jumping the colour down there helps nobody.
+        if (a.closest && a.closest(SKIP_IN_SEARCH)) continue;
+        const raw = a.getAttribute('data-href') || a.getAttribute('href') || '';
+        const target = String(raw).split('#')[0];
+        if (!target) continue;
+        const dest = this.app.metadataCache.getFirstLinkpathDest(target, '');
+        if (!dest || dest.path !== noteFile.path) continue;
+        return (a.closest && (a.closest('li') || a.closest('.el-p, .el-h1, .el-h2, .el-h3, .el-h4, .el-h5, .el-h6, .el-div, .el-ul, .el-ol, .el-table, .el-pre, .el-blockquote'))) || null;
+      }
+    } catch (e) {
+      /* fall back to the whole view */
+    }
+    return null;
   }
 
   /** Takes the highlight off again. */
   clearPassage() {
     const win = this.hitWindow;
-    if (this.hitTimer && win) win.clearTimeout(this.hitTimer);
-    this.hitTimer = null;
+    this.hitWindow = null;
+    // All of it inside the guard: the window may have been a popout that has
+    // since closed, and touching a closed window's timers throws.
     try {
-      if (win && win.CSS && win.CSS.highlights) win.CSS.highlights.delete('lkn-hit');
+      if (this.hitTimer && win) win.clearTimeout(this.hitTimer);
+      if (win && win.CSS && win.CSS.highlights) win.CSS.highlights.delete(HIGHLIGHT_KEY);
     } catch (e) {
       /* the window has gone */
     }
-    this.hitWindow = null;
+    this.hitTimer = null;
   }
 
   /** Unloads the rendered markdown a card was holding, if it held any. */
@@ -2067,10 +2282,25 @@ class LinknotePlugin extends Plugin {
   async renderLinknoteRows(target, sourceFile, entries, onRemoved) {
     const doc = target.ownerDocument || document;
     const holder = doc.createElement('div');
+    // The rendered markdown of the rows being replaced, let go of once the new
+    // rows are in place.
+    const previous = target._lknRowChildren || [];
+    const children = [];
+    const finish = () => {
+      for (const child of previous) {
+        try {
+          this.removeChild(child);
+        } catch (e) {
+          /* already gone */
+        }
+      }
+      target._lknRowChildren = children;
+      swapIn(target, holder);
+    };
 
     if (!entries.length) {
       holder.createDiv({ cls: 'lkn-list-empty', text: 'No linknotes in this note.' });
-      swapIn(target, holder);
+      finish();
       return;
     }
 
@@ -2103,24 +2333,46 @@ class LinknotePlugin extends Plugin {
       if (shown) {
         const passage = row.createDiv({ cls: 'lkn-list-passage', text: shown });
         passage.setAttribute('aria-label', 'Go to the passage');
-        passage.addEventListener('click', (evt) => {
+        passage.setAttribute('role', 'button');
+        passage.setAttribute('tabindex', '0');
+        const goToPassage = (evt) => {
           evt.stopPropagation();
           const sub = entry.blockId ? '#^' + entry.blockId : '';
           this.app.workspace.openLinkText(sourceFile.path + sub, sourceFile.path, false);
           // After the jump, and only if the passage was recorded: the view
           // needs a moment to draw before there is anything to paint.
-          if (info.selection) this.laterHighlight(sourceFile, info.selection);
+          if (info.selection) this.laterHighlight(sourceFile, info.selection, 0, entry.file);
+        };
+        passage.addEventListener('click', goToPassage);
+        passage.addEventListener('keydown', (evt) => {
+          if (evt.key === 'Enter' || evt.key === ' ') goToPassage(evt);
         });
       }
 
       const body = row.createDiv({ cls: 'lkn-list-body' });
-      body.setText(info.text || entry.file.basename);
-      row.addEventListener('click', (evt) => {
-        this.app.workspace.openLinkText(entry.file.path, sourceFile.path, evt.metaKey || evt.ctrlKey);
+      const text = info.text || entry.file.basename;
+      try {
+        const child = new MarkdownRenderChild(body);
+        this.addChild(child);
+        children.push(child);
+        await MarkdownRenderer.render(this.app, text, body, entry.file.path, child);
+      } catch (e) {
+        body.setText(text);
+      }
+      row.setAttribute('role', 'button');
+      row.setAttribute('tabindex', '0');
+      const openNote = (evt) => {
+        this.app.workspace.openLinkText(entry.file.path, sourceFile.path, !!(evt.metaKey || evt.ctrlKey));
+      };
+      row.addEventListener('click', openNote);
+      row.addEventListener('keydown', (evt) => {
+        if (evt.key !== 'Enter' && evt.key !== ' ') return;
+        evt.preventDefault();
+        openNote(evt);
       });
     }
 
-    swapIn(target, holder);
+    finish();
   }
 
   /**
@@ -2365,6 +2617,21 @@ class LinknotePlugin extends Plugin {
     }
   }
 
+  /**
+   * Lets go of a stack that is about to be thrown away. A ResizeObserver holds
+   * its targets, so without this every discarded stack — and the rendered
+   * markdown inside it — stays reachable for as long as the plugin runs.
+   */
+  unobserveStack(stack) {
+    try {
+      const doc = stack && stack.ownerDocument;
+      const observer = doc && this.stackObservers && this.stackObservers.get(doc);
+      if (observer) observer.unobserve(stack);
+    } catch (e) {
+      /* it was never observed */
+    }
+  }
+
   fitStack(stack) {
     const card = stack;
     const host = stack && stack.parentElement;
@@ -2475,8 +2742,33 @@ class LinknotePlugin extends Plugin {
     }
   }
 
-  /** Drops the gutter everywhere, for when cards are turned off. */
+  /**
+   * Takes the cards off the screen, for when they are turned off. The gutter
+   * alone was not enough: the cards themselves stayed where they were until
+   * the note happened to be re-rendered.
+   */
   clearCardLayout() {
+    for (const doc of this.openDocuments()) {
+      try {
+        for (const stack of Array.prototype.slice.call(doc.querySelectorAll('.lkn-card-stack'))) {
+          for (const card of Array.prototype.slice.call(stack.querySelectorAll('.lkn-card'))) {
+            this.dropCardChild(card);
+          }
+          this.unobserveStack(stack);
+          stack.remove();
+        }
+        for (const host of Array.prototype.slice.call(doc.querySelectorAll('.lkn-has-card'))) {
+          host.classList.remove('lkn-has-card');
+          if (host.style) host.style.removeProperty('--lkn-shift');
+        }
+        for (const a of Array.prototype.slice.call(doc.querySelectorAll('a.lkn-marker'))) {
+          a._lknCard = null;
+          a._lknDupe = false;
+        }
+      } catch (e) {
+        /* this document is already gone */
+      }
+    }
     for (const doc of this.openDocuments()) {
       try {
         const views = doc.querySelectorAll('.lkn-cards');
@@ -2508,6 +2800,10 @@ class LinknotePlugin extends Plugin {
       body.style.setProperty('--lkn-card-scale', String((Number(s.cardFontScale) || 100) / 100));
       body.style.setProperty('--lkn-card-lines', String(Number(s.cardMaxLines) || DEFAULT_SETTINGS.cardMaxLines));
       body.style.setProperty('--lkn-card-color', colour);
+      // Carried on the body rather than on each marker, so switching either
+      // setting shows immediately instead of waiting for a re-render.
+      body.classList.toggle('lkn-plain-marker', s.markerStyle === 'plain');
+      body.classList.toggle('lkn-rule-anchored', !!s.highlightAnchored);
       body.classList.toggle('lkn-cards-collapsed', !!s.cardsCollapsed);
     }
   }
@@ -2555,6 +2851,36 @@ class LinknotePlugin extends Plugin {
   }
 
   /** Runs the card passes again once the view has had time to draw. */
+  /**
+   * Draws the cards of an open note again, shortly after it changed on disk.
+   *
+   * Only for a note actually on screen, and only once per burst: a long edit
+   * fires modify over and over, and each pass measures every stack.
+   */
+  resettleSource(file) {
+    if (!file || !file.path || !this.settings.showCards || Platform.isMobile) return;
+    let open = false;
+    try {
+      this.app.workspace.iterateAllLeaves((leaf) => {
+        const view = leaf && leaf.view;
+        if (view && view.file && view.file.path === file.path) open = true;
+      });
+    } catch (e) {
+      return;
+    }
+    if (!open) return;
+    if (this.resettleTimer) window.clearTimeout(this.resettleTimer);
+    this.resettleTimer = window.setTimeout(() => {
+      this.resettleTimer = null;
+      if (this.unloaded) return;
+      this.sweepCards();
+      this.refitCards();
+      this.syncCardLayout();
+      this.scheduleRelayout();
+      this.laterCardPass(300);
+    }, 150);
+  }
+
   laterCardPass(ms) {
     const id = window.setTimeout(() => {
       this.sweepCards();
@@ -2649,8 +2975,27 @@ class LinknotePlugin extends Plugin {
         for (const view of views) this.layoutStacks(view);
       }
     };
-    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
-    else window.setTimeout(run, 16);
+    const docs = this.openDocuments();
+    const win = (docs[0] && docs[0].defaultView) || window;
+    if (typeof win.requestAnimationFrame === 'function') win.requestAnimationFrame(run);
+    else win.setTimeout(run, 16);
+  }
+
+  /**
+   * Draws, places and sizes the cards for every open view, then again a few
+   * times as the view finishes drawing. Called on the workspace events and by
+   * the settings screen, so turning cards on shows them at once rather than
+   * whenever the note next happens to be re-rendered.
+   */
+  settleCards() {
+    this.applyCardStyle();
+    this.sweepCards();
+    this.refitCards();
+    this.syncCardLayout();
+    this.scheduleRelayout();
+    this.laterCardPass(120);
+    this.laterCardPass(500);
+    this.laterCardPass(1200);
   }
 
   /** Re-decides every card on screen, after a resize or a settings change. */
@@ -2698,8 +3043,31 @@ class LinknotePlugin extends Plugin {
 
   /* ------------------------------------------------------- floating button */
 
+  /**
+   * Takes back the selection a linknote was just made from, in the window it
+   * was made in. Nothing in the note is touched — this is the reader's
+   * highlight, not the text.
+   */
+  dropSelection(doc) {
+    this.snapshot = null;
+    try {
+      const win = ((doc || document).defaultView) || window;
+      const sel = win.getSelection && win.getSelection();
+      if (sel && typeof sel.removeAllRanges === 'function') sel.removeAllRanges();
+    } catch (e) {
+      /* the window has gone */
+    }
+  }
+
   refreshFloatingButton(doc) {
     if (!this.settings.showFloatingButton) return;
+    // While the composer is up, and for a moment after it closes: the events
+    // that raise the button are queued behind the press that opened or
+    // dismissed it, and arrive once it is too late to be meant.
+    if (this.composerOpen || Date.now() < (this.buttonMutedUntil || 0)) {
+      this.hideFloatingButton();
+      return;
+    }
     const snap = this.captureSelection(doc);
     if (!snap) {
       this.hideFloatingButton();
@@ -2760,10 +3128,16 @@ class LinknotePlugin extends Plugin {
 
   openComposer(snap) {
     if (!snap) {
-      new Notice('Select some text in Reading view first.');
+      new Notice('Linknote: select some text in Reading view first.');
       return;
     }
-    new LinknoteModal(this.app, this, snap, async (values) => {
+    // The selection is still there while the composer is open, and the events
+    // that raise the floating button fire after the press that opened it — so
+    // without this the button comes straight back and sits over the box like
+    // an afterimage until something clears the selection.
+    this.composerOpen = true;
+    this.hideFloatingButton();
+    const modal = new LinknoteModal(this.app, this, snap, async (values) => {
       try {
         const result = await this.createLinknote(snap, values);
         new Notice('Linknote created: ' + result.file.basename);
@@ -2776,7 +3150,20 @@ class LinknotePlugin extends Plugin {
         console.error('[Linknote]', err);
         new Notice('Could not create the linknote: ' + (err && err.message ? err.message : err));
       }
-    }).open();
+    });
+    const closed = modal.onClose.bind(modal);
+    modal.onClose = () => {
+      this.composerOpen = false;
+      // The passage has been used, so the selection behind it has done its
+      // work. Dropped here because pressing Save raises a mouseup, and the
+      // check that mouseup schedules runs after the composer has gone: it
+      // would find the selection still standing and put the button back.
+      this.dropSelection(snap.doc);
+      this.buttonMutedUntil = Date.now() + 500;
+      this.hideFloatingButton();
+      closed();
+    };
+    modal.open();
   }
 
   /* ------------------------------------------------------------------ core */
@@ -2884,21 +3271,26 @@ class LinknotePlugin extends Plugin {
     await new Promise((resolve) => {
       let settled = false;
       let ref = null;
-      const timer = setTimeout(() => finish(), timeoutMs || 2000);
-      function finish() {
+      // The listener goes on both paths. Letting go only when the event
+      // arrives leaked one subscription per timed-out creation.
+      const finish = () => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        try {
+          if (ref && this.app.metadataCache.offref) this.app.metadataCache.offref(ref);
+        } catch (e) {
+          /* already gone */
+        }
         resolve();
-      }
-      const done = () => {
-        if (ref && this.app.metadataCache.offref) this.app.metadataCache.offref(ref);
-        finish();
       };
+      const timer = setTimeout(finish, timeoutMs || 2000);
       ref = this.app.metadataCache.on('changed', (changed) => {
-        if (changed && changed.path === file.path && cacheHasBlock()) done();
+        if (changed && changed.path === file.path && cacheHasBlock()) finish();
       });
-      if (cacheHasBlock()) done();
+      // registerEvent as well, so unload takes it down if we never settle.
+      this.registerEvent(ref);
+      if (cacheHasBlock()) finish();
     });
   }
 
@@ -2957,6 +3349,9 @@ class LinknotePlugin extends Plugin {
       // The marker this device is set to. Two devices need not agree on it,
       // so a note can record which one it was written on.
       marker: String(s.marker || '').trim(),
+      // The heading cards and rows read the body from. Writing it through the
+      // template rather than typing it means the two cannot drift apart.
+      bodyHeading: String(s.bodyHeading || DEFAULT_SETTINGS.bodyHeading).trim(),
       summary: sourceFile.basename + ' — ' + excerpt + (snap.text.length > 40 ? '…' : ''),
     };
 
@@ -3240,7 +3635,7 @@ class LinknoteModal extends Modal {
     };
 
     const taskBtn = tools.createEl('button', { cls: 'lkn-tool', text: 'Task' });
-    taskBtn.setAttribute('aria-label', 'Turn this line into a task');
+    taskBtn.setAttribute('title', 'Turn this line into a task');
     taskBtn.addEventListener('click', (evt) => {
       evt.preventDefault();
       const next = toggleTaskLine(bodyInput.value, bodyInput.selectionStart);
@@ -3250,7 +3645,7 @@ class LinknoteModal extends Modal {
     });
 
     const tagBtn = tools.createEl('button', { cls: 'lkn-tool', text: 'Tag' });
-    tagBtn.setAttribute('aria-label', 'Insert a tag');
+    tagBtn.setAttribute('title', 'Insert a tag');
     tagBtn.addEventListener('click', (evt) => {
       evt.preventDefault();
       insertAtCaret('#');
@@ -3307,6 +3702,75 @@ class LinknoteModal extends Modal {
       }
     });
 
+    const doc = bodyInput.ownerDocument || document;
+
+    // Whether the tag list is actually on screen — not whether there are
+    // matches behind it, which can outlive the list being drawn.
+    this.suggestOpen = () => {
+      try {
+        if (!suggest || !suggest.isConnected || !matches.length) return false;
+        const win = doc.defaultView || window;
+        return win.getComputedStyle(suggest).display !== 'none';
+      } catch (e) {
+        return matches.length > 0;
+      }
+    };
+
+    /*
+     * Esc belongs to the tag list while the list is open, and to the composer
+     * the rest of the time. Which handler sees the key first is not ours to
+     * decide — Obsidian watches for it too, through the modal's own scope and
+     * through a listener above this box — so rather than race, all three ways
+     * in are covered and they agree:
+     *
+     *   1. the key on its way down, before anything else has had it;
+     *   2. the modal's scope, which is how Obsidian itself asks;
+     *   3. close() itself, for when the shutdown was already under way.
+     *
+     * Whichever arrives first puts the list away and leaves the composer, so
+     * nothing that was typed is lost; the next Esc closes the composer.
+     */
+    const guard = (evt) => {
+      if (evt.key !== 'Escape' || !this.suggestOpen()) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      closeSuggest();
+    };
+    doc.addEventListener('keydown', guard, true);
+    this.detachGuard = () => doc.removeEventListener('keydown', guard, true);
+
+    try {
+      this.scope.register([], 'Escape', () => {
+        if (!this.suggestOpen()) return true;   // let Obsidian close the box
+        closeSuggest();
+        return false;
+      });
+    } catch (e) {
+      /* an older scope: the other two ways still hold */
+    }
+
+    // The last line of defence. A close that came from an Esc press while the
+    // list was open is not a close at all — it is the list being dismissed.
+    // Anything else (Cancel, Save, clicking away) closes as it always did.
+    if (!this.closeWrapped) {
+      this.closeWrapped = true;
+      const shut = this.close.bind(this);
+      this.close = () => {
+        let evt = null;
+        try {
+          evt = (doc.defaultView && doc.defaultView.event) || null;
+        } catch (e) {
+          evt = null;
+        }
+        const byEscape = !!evt && evt.type === 'keydown' && evt.key === 'Escape';
+        if (byEscape && this.suggestOpen()) {
+          closeSuggest();
+          return;
+        }
+        shut();
+      };
+    }
+
     if (mobile) this.fitAboveKeyboard(modalEl);
 
     // Auto-focus fights the on-screen keyboard on mobile.
@@ -3340,9 +3804,15 @@ class LinknoteModal extends Modal {
   }
 
   onClose() {
+    if (this.closed) return;
+    this.closed = true;
     if (this.detachFit) {
       this.detachFit();
       this.detachFit = null;
+    }
+    if (this.detachGuard) {
+      this.detachGuard();
+      this.detachGuard = null;
     }
     this.contentEl.empty();
   }
@@ -3372,8 +3842,42 @@ const TEMPLATE_VARIABLES = [
   ['{{time}}', 'creation time, as HH:mm'],
   ['{{author}}', 'the author set below'],
   ['{{marker}}', 'the marker character set below; useful when two devices use different ones'],
+  ['{{bodyHeading}}', 'the body heading set below, so the template and the setting cannot drift apart'],
   ['{{summary}}', 'source note name and a short excerpt'],
 ];
+
+/** Asks before something is replaced or thrown away. */
+class LinknoteConfirmModal extends Modal {
+  constructor(app, title, body, confirmText, onConfirm) {
+    super(app);
+    this.title = title;
+    this.body = body;
+    this.confirmText = confirmText;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    this.modalEl.addClass('lkn-modal');
+    this.setTitle(this.title);
+    contentEl.empty();
+    contentEl.createEl('p', { text: this.body });
+
+    const buttons = contentEl.createDiv({ cls: 'lkn-buttons' });
+    buttons.createDiv({ cls: 'lkn-hint' });
+    const cancel = buttons.createEl('button', { text: 'Cancel' });
+    cancel.addEventListener('click', () => this.close());
+    const go = buttons.createEl('button', { text: this.confirmText, cls: 'mod-warning' });
+    go.addEventListener('click', () => {
+      this.close();
+      this.onConfirm();
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
 
 class LinknoteSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
@@ -3381,73 +3885,192 @@ class LinknoteSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  /**
+   * A slider's value, spelled out beside its description.
+   *
+   * setDynamicTooltip() shows the number only while it is dragged with a
+   * pointer, so a keyboard user never learns what the value is.
+   */
+  showValue(setting, text) {
+    const el = setting.descEl.createDiv({ cls: 'lkn-value', text: text });
+    return (next) => el.setText(next);
+  }
+
+  /** Replaces the template, asking first when there is work to lose. */
+  replaceTemplate(next, what) {
+    const s = this.plugin.settings;
+    const apply = async () => {
+      s.noteTemplate = next;
+      await this.plugin.saveSettings();
+      this.redraw();
+      new Notice('Note template replaced with: ' + what);
+    };
+    const known =
+      TEMPLATE_PRESETS.some((preset) => preset.template === s.noteTemplate) ||
+      LEGACY_NOTE_TEMPLATES.indexOf(s.noteTemplate) !== -1;
+    if (known || s.noteTemplate === next) {
+      apply();
+      return;
+    }
+    new LinknoteConfirmModal(
+      this.app,
+      'Replace the note template?',
+      'What is in the template box now is not one of the presets, so it looks like your own. ' +
+        'Replacing it cannot be undone — copy anything you want to keep first.',
+      'Replace',
+      apply
+    ).open();
+  }
+
+  /**
+   * Draws the tab again, keeping the reader where they were.
+   *
+   * Some rows only exist while another is on, so switching one of those means
+   * rebuilding the tab. Rebuilding empties the pane, which sends it back to
+   * the top — halfway down a long settings screen that is a jolt, and it is
+   * not obvious the toggle even worked. So the scroll position is put back.
+   */
+  redraw() {
+    const el = this.containerEl;
+    let top = 0;
+    try {
+      top = el.scrollTop || 0;
+    } catch (e) {
+      top = 0;
+    }
+    this.display();
+    if (!top) return;
+    const restore = () => {
+      try {
+        el.scrollTop = top;
+      } catch (e) {
+        /* the tab has closed */
+      }
+    };
+    restore();
+    // The rows arrive as the browser gets to them, so on the first try the
+    // pane may not yet be tall enough to scroll that far.
+    try {
+      window.requestAnimationFrame(restore);
+    } catch (e) {
+      /* no frames here */
+    }
+  }
+
   display() {
     const { containerEl } = this;
     const s = this.plugin.settings;
     containerEl.empty();
 
+    /* ------------------------------------------------ new linknotes */
+
+    new Setting(containerEl).setName('New linknotes').setHeading();
+
     new Setting(containerEl)
       .setName('Linknote folder')
-      .setDesc('Where new linknotes are created. Created if missing. Default: ' + DEFAULT_SETTINGS.folder)
-      .addText((t) =>
-        t.setValue(s.folder).onChange(async (v) => {
-          // safeFolder refuses a path that climbs out of the vault, so a typo
-          // like ../Documents cannot send new notes outside it.
-          s.folder = safeFolder(v) || DEFAULT_SETTINGS.folder;
-          if (typeof renderPreview === 'function') renderPreview();
-          await this.plugin.saveSettings();
-        })
-      );
+      .setDesc(
+        'Where new linknotes are created, and created if it is missing. Everyone sharing a vault ' +
+          'should use the same folder. To see the linknotes of the note you are reading, open the ' +
+          'sidebar list from the ribbon icon or the command "Show the linknotes in this note".'
+      )
+      .addText((t) => {
+        t.setPlaceholder(DEFAULT_SETTINGS.folder)
+          .setValue(s.folder)
+          .onChange(async (v) => {
+            // safeFolder refuses a path that climbs out of the vault, so a typo
+            // like ../Documents cannot send new notes outside it. What is kept
+            // is the safe reading; what is shown is left alone until the field
+            // is done with, or clearing it to type a new name would snap back
+            // to the old one on the first keystroke.
+            s.folder = safeFolder(v) || DEFAULT_SETTINGS.folder;
+            renderPreview();
+            await this.plugin.saveSettings();
+          });
+        // Now the typing has stopped, show what was actually kept.
+        t.inputEl.addEventListener('blur', () => {
+          if (t.inputEl.value !== s.folder) t.inputEl.value = s.folder;
+        });
+      });
 
     new Setting(containerEl)
       .setName('Filename template')
       .setDesc(
-        'Template variables are listed below. The .md extension is added for you. ' +
-          '{{title}} is shortened to ' + FILENAME_TITLE_MAX_CHARS + ' characters here only. ' +
-          'Default: ' + DEFAULT_SETTINGS.filenameTemplate
+        'The variables are listed under the note template below, and the .md extension is added ' +
+          'for you. {{anchor}} is what keeps two linknotes on the same note apart. {{title}} is cut ' +
+          'to ' + FILENAME_TITLE_MAX_CHARS + ' characters here only, and the finished name to ' +
+          FILENAME_MAX_BYTES + ' bytes.'
       )
       .addText((t) =>
-        t.setValue(s.filenameTemplate).onChange(async (v) => {
-          s.filenameTemplate = v.trim() || DEFAULT_SETTINGS.filenameTemplate;
-          renderPreview();
-          await this.plugin.saveSettings();
-        })
+        t
+          .setPlaceholder(DEFAULT_SETTINGS.filenameTemplate)
+          .setValue(s.filenameTemplate)
+          .onChange(async (v) => {
+            s.filenameTemplate = v.trim() || DEFAULT_SETTINGS.filenameTemplate;
+            renderPreview();
+            await this.plugin.saveSettings();
+          })
       );
-
-    const preview = containerEl.createDiv({ cls: 'lkn-preview' });
-    const renderPreview = () => preview.setText('Result: ' + previewFilename(s));
-    renderPreview();
 
     new Setting(containerEl)
       .setName('Date format')
-      .setDesc('Tokens: YYYY, YY, MMMM, MMM, MM, DD, dddd, ddd, HH, mm, ss. Default: ' + DEFAULT_SETTINGS.dateFormat)
+      .setDesc('Tokens: YYYY, YY, MMMM, MMM, MM, DD, dddd, ddd, HH, mm, ss.')
       .addText((t) =>
-        t.setValue(s.dateFormat).onChange(async (v) => {
-          s.dateFormat = v.trim() || DEFAULT_SETTINGS.dateFormat;
-          renderPreview();
-          await this.plugin.saveSettings();
-        })
+        t
+          .setPlaceholder(DEFAULT_SETTINGS.dateFormat)
+          .setValue(s.dateFormat)
+          .onChange(async (v) => {
+            s.dateFormat = v.trim() || DEFAULT_SETTINGS.dateFormat;
+            renderPreview();
+            await this.plugin.saveSettings();
+          })
       );
 
     new Setting(containerEl)
       .setName('Author')
-      .setDesc('Available as {{author}}. Leave empty if you do not need it. Default: empty')
+      .setDesc(
+        'Available in templates as {{author}}, and shown at the head of every card and sidebar row. ' +
+          'Set it on each device where several people share a vault.'
+      )
       .addText((t) =>
         t
           .setPlaceholder('(empty)')
           .setValue(s.author)
           .onChange(async (v) => {
             s.author = v.trim();
+            renderPreview();
             await this.plugin.saveSettings();
           })
       );
 
+    // Last in this group, so it reflects every field above it.
+    const preview = containerEl.createDiv({ cls: 'lkn-preview' });
+    const renderPreview = () => preview.setText('Example: ' + previewFilename(s));
+    renderPreview();
+
+    /* ------------------------------------------------- note template */
+
+    new Setting(containerEl).setName('The note template').setHeading();
+
+    new Setting(containerEl)
+      .setName('Start from a preset')
+      .setDesc('Five starting points. Loading one replaces the template below; rewrite it in whatever language you write in.')
+      .addDropdown((d) => {
+        TEMPLATE_PRESETS.forEach((preset, i) => d.addOption(String(i), preset.name));
+        d.setValue(String(this.presetIndex || 0));
+        d.onChange((v) => {
+          this.presetIndex = Number(v);
+        });
+      })
+      .addButton((b) =>
+        b.setButtonText('Replace template').onClick(() => {
+          const preset = TEMPLATE_PRESETS[this.presetIndex || 0];
+          this.replaceTemplate(preset.template, preset.name);
+        })
+      );
+
     new Setting(containerEl)
       .setName('Note template')
-      .setDesc(
-        'The whole linknote, frontmatter included. Blank runs left by empty variables are collapsed. ' +
-          'Default: the ' + TEMPLATE_PRESETS[0].name + ' preset'
-      )
+      .setDesc('The whole linknote, frontmatter included. Blank runs left by empty variables are collapsed.')
       .addTextArea((t) => {
         t.setValue(s.noteTemplate).onChange(async (v) => {
           s.noteTemplate = v || DEFAULT_NOTE_TEMPLATE;
@@ -3460,31 +4083,7 @@ class LinknoteSettingTab extends PluginSettingTab {
         b
           .setIcon('rotate-ccw')
           .setTooltip('Restore the default template')
-          .onClick(async () => {
-            s.noteTemplate = DEFAULT_NOTE_TEMPLATE;
-            await this.plugin.saveSettings();
-            this.display();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Load a preset')
-      .setDesc('Replaces the note template above. Presets are starting points — rewrite them in whatever language you write in.')
-      .addDropdown((d) => {
-        TEMPLATE_PRESETS.forEach((preset, i) => d.addOption(String(i), preset.name));
-        d.setValue(String(this.presetIndex || 0));
-        d.onChange((v) => {
-          this.presetIndex = Number(v);
-        });
-      })
-      .addButton((b) =>
-        b.setButtonText('Load').onClick(async () => {
-          const preset = TEMPLATE_PRESETS[this.presetIndex || 0];
-          s.noteTemplate = preset.template;
-          await this.plugin.saveSettings();
-          this.display();
-          new Notice('Note template replaced with: ' + preset.name);
-        })
+          .onClick(() => this.replaceTemplate(DEFAULT_NOTE_TEMPLATE, TEMPLATE_PRESETS[0].name))
       );
 
     const help = containerEl.createEl('details', { cls: 'lkn-varhelp' });
@@ -3496,215 +4095,29 @@ class LinknoteSettingTab extends PluginSettingTab {
       li.appendText(' — ' + desc);
     }
 
-    new Setting(containerEl).setName('Anchoring').setHeading();
-
-    new Setting(containerEl)
-      .setName('Link marker')
-      .setDesc('The character left at the anchored spot in the source note. Default: ' + DEFAULT_SETTINGS.marker)
-      .addText((t) =>
-        t.setValue(s.marker).onChange(async (v) => {
-          s.marker = v || DEFAULT_SETTINGS.marker;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName('Add a block ID')
-      .setDesc('Appends a block ID so the linknote can embed the anchored block.')
-      .addToggle((t) =>
-        t.setValue(s.useBlockId).onChange(async (v) => {
-          s.useBlockId = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName('Insert the link marker')
-      .setDesc('Turn off to leave only a block ID in the source note.')
-      .addToggle((t) =>
-        t.setValue(s.useInlineLink).onChange(async (v) => {
-          s.useInlineLink = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl).setName('Appearance').setHeading();
-
-    new Setting(containerEl)
-      .setName('Marker style')
-      .setDesc('How the marker looks in the source note. Rendering only — nothing is written to your notes.')
-      .addDropdown((d) => {
-        d.addOption('chip', 'Chip — small badge');
-        d.addOption('plain', 'Plain — an ordinary link');
-        d.setValue(s.markerStyle || DEFAULT_SETTINGS.markerStyle);
-        d.onChange(async (v) => {
-          s.markerStyle = v;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName('Mark the annotated block')
-      .setDesc('Draws a thin rule beside any block that carries a linknote, so annotated passages stand out while reading.')
-      .addToggle((t) =>
-        t.setValue(s.highlightAnchored).onChange(async (v) => {
-          s.highlightAnchored = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName('Show linknotes as cards')
-      .setDesc(
-        'Draws each linknote beside the passage it annotates — in the margin where the window is wide enough, ' +
-        'inline where it is not. Reading view only, and nothing is written to your notes. Default: off'
-      )
-      .addToggle((t) =>
-        t.setValue(s.showCards).onChange(async (v) => {
-          s.showCards = v;
-          await this.plugin.saveSettings();
-          this.plugin.clearCardLayout();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName('Card width')
-      .setDesc(
-        'How wide a card in the margin is. The room made for it follows, so a narrower card ' +
-        'leaves more of the pane to the text. Default: ' + DEFAULT_SETTINGS.cardWidth + 'px'
-      )
-      .addSlider((sl) =>
-        sl
-          .setLimits(160, 400, 20)
-          .setValue(Number(s.cardWidth) || DEFAULT_SETTINGS.cardWidth)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.cardWidth = v;
-            await this.plugin.saveSettings();
-            this.plugin.applyCardStyle();
-            this.plugin.refitCards();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Card height')
-      .setDesc(
-        'How many lines a card shows before it starts to scroll. Shorter keeps the column tidy ' +
-        'where several passages carry notes. Default: ' + DEFAULT_SETTINGS.cardMaxLines + ' lines'
-      )
-      .addSlider((sl) =>
-        sl
-          .setLimits(3, 24, 1)
-          .setValue(Number(s.cardMaxLines) || DEFAULT_SETTINGS.cardMaxLines)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.cardMaxLines = v;
-            await this.plugin.saveSettings();
-            this.plugin.applyCardStyle();
-            this.plugin.scheduleRelayout();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Cards shown per block')
-      .setDesc(
-        'How many cards a block shows at once; any beyond that are reached by scrolling the group. ' +
-        'Zero shows them all. Default: ' + DEFAULT_SETTINGS.cardsPerStack
-      )
-      .addSlider((sl) =>
-        sl
-          .setLimits(0, 10, 1)
-          .setValue(Number(s.cardsPerStack) || 0)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.cardsPerStack = v;
-            await this.plugin.saveSettings();
-            this.plugin.scheduleRelayout();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Card text size')
-      .setDesc('As a percentage of the size Obsidian uses for small interface text. Default: 100')
-      .addSlider((sl) =>
-        sl
-          .setLimits(70, 130, 5)
-          .setValue(Number(s.cardFontScale) || DEFAULT_SETTINGS.cardFontScale)
-          .setDynamicTooltip()
-          .onChange(async (v) => {
-            s.cardFontScale = v;
-            await this.plugin.saveSettings();
-            this.plugin.applyCardStyle();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Card text color')
-      .setDesc(
-        'The first four follow your theme, so they stay readable when you switch between light ' +
-        'and dark. A custom color does not. Default: Normal'
-      )
-      .addDropdown((d) => {
-        d.addOption('normal', 'Normal');
-        d.addOption('muted', 'Muted');
-        d.addOption('faint', 'Faint');
-        d.addOption('accent', 'Accent');
-        d.addOption('custom', 'Custom');
-        d.setValue(s.cardTextColour || DEFAULT_SETTINGS.cardTextColour);
-        d.onChange(async (v) => {
-          s.cardTextColour = v;
-          await this.plugin.saveSettings();
-          this.plugin.applyCardStyle();
-        });
-      })
-      .addColorPicker((c) =>
-        c.setValue(s.cardTextColourCustom || '#888888').onChange(async (v) => {
-          s.cardTextColourCustom = v;
-          s.cardTextColour = 'custom';
-          await this.plugin.saveSettings();
-          this.plugin.applyCardStyle();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName('Card placement')
-      .setDesc(
-        'In the margin, the text column is narrowed to make room, which is what a margin note costs. ' +
-        'A narrow pane falls back to inline whichever is chosen. On mobile no cards are drawn at all. Default: In the margin'
-      )
-      .addDropdown((d) => {
-        d.addOption('margin', 'In the margin');
-        d.addOption('inline', 'Under the block');
-        d.setValue(s.cardPlacement || DEFAULT_SETTINGS.cardPlacement);
-        d.onChange(async (v) => {
-          s.cardPlacement = v;
-          await this.plugin.saveSettings();
-          this.plugin.refitCards();
-        });
-      });
-
     new Setting(containerEl)
       .setName('Body heading')
       .setDesc(
-        'The heading in a linknote that marks your own note, as opposed to the quoted source. ' +
-        'The cards read the section under it. Default: ' + DEFAULT_SETTINGS.bodyHeading
+        'The heading inside a linknote that marks your own note, as opposed to the quoted source. ' +
+          'It has to match the heading your template writes — put {{bodyHeading}} in the template ' +
+          'and it always will. Cards and sidebar rows read the section under it; where there is no ' +
+          'such heading they fall back to the body property, and then to the whole note, which is ' +
+          'why changing this alone can look as though nothing happened.'
       )
       .addText((t) =>
         t.setPlaceholder(DEFAULT_SETTINGS.bodyHeading).setValue(s.bodyHeading).onChange(async (v) => {
           s.bodyHeading = v.trim() || DEFAULT_SETTINGS.bodyHeading;
           await this.plugin.saveSettings();
+          this.plugin.settleCards();
         })
       );
 
     new Setting(containerEl)
-      .setName('Write the body property from the note')
+      .setName('Keep the body property in step with the note')
       .setDesc(
-        'The note is the original and the property is a copy of it. Edit the section under the body ' +
-        'heading and Linknote writes it to the note\'s body property, so a query sees what the note ' +
-        'now says. Editing that property directly has no lasting effect: it is overwritten from the ' +
-        'note the next time the file is read. To change the text, change the note. Only linknotes ' +
-        'that already carry the property are touched, never any other note. Turn this off to leave ' +
-        'the property exactly as it was first written. Default: on'
+        'The note is the original and the property is a copy, rewritten from the section under the ' +
+          'body heading so a query sees what the note now says. An edit made to the property itself ' +
+          'is overwritten. Only linknotes that already carry a body property are touched.'
       )
       .addToggle((t) =>
         t.setValue(s.syncBodyProperty).onChange(async (v) => {
@@ -3713,11 +4126,290 @@ class LinknoteSettingTab extends PluginSettingTab {
         })
       );
 
+    /* ---------------------------------- the marker in the source note */
+
+    new Setting(containerEl).setName('The marker in the source note').setHeading();
+
+    new Setting(containerEl)
+      .setName('Marker character')
+      .setDesc(
+        'Left at the anchored spot in the source note. One or two characters — † · ¶ — or an emoji. ' +
+          'A longer one is not recognised on a device set to a different marker, and | or ] would ' +
+          'break the link.'
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder(DEFAULT_SETTINGS.marker)
+          .setValue(s.marker)
+          .onChange(async (v) => {
+            s.marker = v || DEFAULT_SETTINGS.marker;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Add a link marker')
+      .setDesc(
+        'Leaves a small link at the anchored spot. It is what the cards, the sidebar list and Remove ' +
+          'find a linknote by — with this off, new linknotes get a block ID only and appear in none of them.'
+      )
+      .addToggle((t) =>
+        t.setValue(s.useInlineLink).onChange(async (v) => {
+          s.useInlineLink = v;
+          await this.plugin.saveSettings();
+          if (!v && !s.useBlockId) {
+            new Notice(
+              'Linknote: with both the marker and the block ID off, nothing is written to the source note and a new linknote cannot be found again.'
+            );
+          }
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Add a block ID')
+      .setDesc(
+        'Writes a ^blockid into the source note at the anchored spot, so a linknote can point at the ' +
+          'exact block and keep pointing at it as the note is revised. Headings are referenced by ' +
+          'their own anchor and never get one. With this off, {{embed}} is empty.'
+      )
+      .addToggle((t) =>
+        t.setValue(s.useBlockId).onChange(async (v) => {
+          s.useBlockId = v;
+          await this.plugin.saveSettings();
+          if (!v && !s.useInlineLink) {
+            new Notice(
+              'Linknote: with both the marker and the block ID off, nothing is written to the source note and a new linknote cannot be found again.'
+            );
+          }
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Marker style')
+      .setDesc('How the marker looks while reading. Rendering only — nothing is written to your notes.')
+      .addDropdown((d) => {
+        d.addOption('chip', 'Chip — small badge');
+        d.addOption('plain', 'Plain — an ordinary link');
+        d.setValue(s.markerStyle || DEFAULT_SETTINGS.markerStyle);
+        d.onChange(async (v) => {
+          s.markerStyle = v;
+          await this.plugin.saveSettings();
+          this.plugin.applyCardStyle();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Highlight annotated blocks')
+      .setDesc(
+        'Draws a thin rule beside any block that carries a linknote, so annotated passages stand out ' +
+          'while reading. On mobile an annotated list item gets none: there is no room beside the number.'
+      )
+      .addToggle((t) =>
+        t.setValue(s.highlightAnchored).onChange(async (v) => {
+          s.highlightAnchored = v;
+          await this.plugin.saveSettings();
+          this.plugin.applyCardStyle();
+        })
+      );
+
+    /* ------------------------------------------------------- the cards */
+
+    new Setting(containerEl).setName('Cards beside the text').setHeading();
+
+    new Setting(containerEl)
+      .setName('Show linknotes as cards')
+      .setDesc(
+        'Draws each linknote beside the passage it annotates — in the margin where the pane is wide ' +
+          'enough, under the block where it is not. Reading view only, and nothing is written to your ' +
+          'notes. Cards are not drawn on mobile, where tapping a marker opens a sheet instead.'
+      )
+      .addToggle((t) =>
+        t.setValue(s.showCards).onChange(async (v) => {
+          s.showCards = v;
+          await this.plugin.saveSettings();
+          if (v) this.plugin.settleCards();
+          else this.plugin.clearCardLayout();
+          // The rows below only apply when cards are drawn.
+          this.redraw();
+        })
+      );
+
+    if (Platform.isMobile) {
+      containerEl.createDiv({
+        cls: 'lkn-hint',
+        text: 'Cards are not drawn on mobile. Tap a marker to open the linknote in a sheet.',
+      });
+    } else if (s.showCards) {
+      new Setting(containerEl)
+        .setName('Card placement')
+        .setDesc(
+          'In the margin, the text column is narrowed to make room, which is what a margin note ' +
+            'costs. A pane too narrow for that falls back to inline whichever is chosen.'
+        )
+        .addDropdown((d) => {
+          d.addOption('margin', 'In the margin');
+          d.addOption('inline', 'Under the block');
+          d.setValue(s.cardPlacement || DEFAULT_SETTINGS.cardPlacement);
+          d.onChange(async (v) => {
+            s.cardPlacement = v;
+            await this.plugin.saveSettings();
+            this.plugin.refitCards();
+          });
+        });
+
+      const widthSetting = new Setting(containerEl)
+        .setName('Card width')
+        .setDesc('How wide a card in the margin is. The room made for it follows, so a narrower card leaves more of the pane to the text.');
+      const widthLabel = this.showValue(
+        widthSetting,
+        (Number(s.cardWidth) || DEFAULT_SETTINGS.cardWidth) + 'px — needs a pane about ' +
+          cardMinPane(s.cardWidth) + 'px wide'
+      );
+      widthSetting.addSlider((sl) =>
+        sl
+          .setLimits(160, 400, 20)
+          .setValue(Number(s.cardWidth) || DEFAULT_SETTINGS.cardWidth)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.cardWidth = v;
+            widthLabel(v + 'px — needs a pane about ' + cardMinPane(v) + 'px wide');
+            await this.plugin.saveSettings();
+            this.plugin.applyCardStyle();
+            this.plugin.refitCards();
+          })
+      );
+
+      const linesSetting = new Setting(containerEl)
+        .setName('Lines shown per card')
+        .setDesc('How much of a card is shown before it starts to scroll.');
+      const linesLabel = this.showValue(
+        linesSetting,
+        (Number(s.cardMaxLines) || DEFAULT_SETTINGS.cardMaxLines) + ' lines'
+      );
+      linesSetting.addSlider((sl) =>
+        sl
+          .setLimits(3, 24, 1)
+          .setValue(Number(s.cardMaxLines) || DEFAULT_SETTINGS.cardMaxLines)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.cardMaxLines = v;
+            linesLabel(v + ' lines');
+            await this.plugin.saveSettings();
+            this.plugin.applyCardStyle();
+            this.plugin.scheduleRelayout();
+          })
+      );
+
+      const perSetting = new Setting(containerEl)
+        .setName('Cards shown per block')
+        .setDesc('A block can carry several linknotes. Any beyond this many are reached by scrolling the group.');
+      const perLabel = this.showValue(
+        perSetting,
+        (Number(s.cardsPerStack) || 0) === 0 ? 'all of them' : Number(s.cardsPerStack) + ' cards'
+      );
+      perSetting.addSlider((sl) =>
+        sl
+          .setLimits(0, 10, 1)
+          .setValue(Number(s.cardsPerStack) || 0)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.cardsPerStack = v;
+            perLabel(v === 0 ? 'all of them' : v + ' cards');
+            await this.plugin.saveSettings();
+            this.plugin.scheduleRelayout();
+          })
+      );
+
+      const sizeSetting = new Setting(containerEl)
+        .setName('Card text size')
+        .setDesc('As a percentage of the size Obsidian uses for small interface text.');
+      const sizeLabel = this.showValue(
+        sizeSetting,
+        (Number(s.cardFontScale) || DEFAULT_SETTINGS.cardFontScale) + '%'
+      );
+      sizeSetting.addSlider((sl) =>
+        sl
+          .setLimits(70, 130, 5)
+          .setValue(Number(s.cardFontScale) || DEFAULT_SETTINGS.cardFontScale)
+          .setDynamicTooltip()
+          .onChange(async (v) => {
+            s.cardFontScale = v;
+            sizeLabel(v + '%');
+            await this.plugin.saveSettings();
+            this.plugin.applyCardStyle();
+          })
+      );
+
+      new Setting(containerEl)
+        .setName('Card text color')
+        .setDesc('Normal, Muted, Faint and Accent follow your theme and stay readable in light and dark. A custom color does not.')
+        .addDropdown((d) => {
+          d.addOption('normal', 'Normal');
+          d.addOption('muted', 'Muted');
+          d.addOption('faint', 'Faint');
+          d.addOption('accent', 'Accent');
+          d.addOption('custom', 'Custom');
+          d.setValue(s.cardTextColour || DEFAULT_SETTINGS.cardTextColour);
+          d.onChange(async (v) => {
+            s.cardTextColour = v;
+            await this.plugin.saveSettings();
+            this.plugin.applyCardStyle();
+            // The custom colour is only offered once it is the one in use.
+            this.redraw();
+          });
+        });
+
+      if (s.cardTextColour === 'custom') {
+        // The box and the swatch are two ways into one value, so each writes
+        // the other's face. Redrawing the tab instead would shut the picker
+        // on the first drag.
+        let colourBox = null;
+        new Setting(containerEl)
+          .setName('Custom card text color')
+          .setDesc('Used while Card text color is set to Custom. It does not follow your theme, so check it in both light and dark mode.')
+          .addText((t) => {
+            colourBox = t;
+            t.setPlaceholder('#888888')
+              .setValue(s.cardTextColourCustom || '')
+              .onChange(async (v) => {
+                s.cardTextColourCustom = v.trim();
+                await this.plugin.saveSettings();
+                this.plugin.applyCardStyle();
+              });
+          })
+          .addColorPicker((c) =>
+            c.setValue(s.cardTextColourCustom || '#888888').onChange(async (v) => {
+              s.cardTextColourCustom = v;
+              await this.plugin.saveSettings();
+              this.plugin.applyCardStyle();
+              if (colourBox) colourBox.inputEl.value = v;
+            })
+          );
+      }
+
+      new Setting(containerEl)
+        .setName('Start with cards stowed')
+        .setDesc(
+          'Stowed cards are drawn as thin strips beside their passages, leaving the text its full ' +
+            'width. Press a strip, or run "Show or stow the linknote cards", to open them again.'
+        )
+        .addToggle((t) =>
+          t.setValue(s.cardsCollapsed).onChange(async (v) => {
+            this.plugin.toggleCardsCollapsed(v);
+          })
+        );
+    }
+
+    /* ---------------------------------------------------------- behaviour */
+
     new Setting(containerEl).setName('Behavior').setHeading();
 
     new Setting(containerEl)
-      .setName('Show the floating button')
-      .setDesc('Turn off to work from the command palette or a hotkey instead.')
+      .setName('Show the Linknote button when text is selected')
+      .setDesc(
+        'Appears next to a selection in Reading view — on mobile, as a bar along the bottom of the ' +
+          'screen. Turn it off to work from the command palette or a hotkey instead.'
+      )
       .addToggle((t) =>
         t.setValue(s.showFloatingButton).onChange(async (v) => {
           s.showFloatingButton = v;
@@ -3728,6 +4420,7 @@ class LinknoteSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Open the linknote after creating it')
+      .setDesc('Opens it in a split beside the note you were reading, once the block reference resolves.')
       .addToggle((t) =>
         t.setValue(s.openAfterCreate).onChange(async (v) => {
           s.openAfterCreate = v;

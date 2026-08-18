@@ -434,15 +434,30 @@ console.log('\nthe shipped default template');
     selectionYaml: m.toYamlBlock('the tenth business day'),
     titleShort: 'Close is the tenth business day',
     body: 'Confirmed with Finance.\nTwice.',
+    bodyHeading: 'Linknote',
   };
   eq(
     'renders frontmatter, the folded source and the note',
     tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars)),
     '---\ntype: Linknote\ncreated: 2026-08-12 09:05\nsource: "[[Team handbook#^k3n8v1]]"\nauthor: A. Reader\n' +
       'selection: |-\n  the tenth business day\nbody: |-\n  Confirmed with Finance.\n  Twice.\n---\n' +
-      '> [!NOTE]- Close is the tenth business day... [[Team handbook#^k3n8v1]]\n> the tenth business day\n\n' +
+      '> [!NOTE]- Close is the tenth business day... [[Team handbook#^k3n8v1]]\n> the tenth business day\n' +
       '## Linknote\nConfirmed with Finance.\nTwice.\n'
   );
+}
+
+console.log('\nthe body heading comes from the setting, not from the template text');
+{
+  const vars = {
+    date: '2026-08-12', time: '09:05', sourceBlock: '[[Doc]]', author: '', selectionYaml: '',
+    bodyYaml: '', titleShort: 'T', selectionQuote: '> x', body: 'note', bodyHeading: 'Comment',
+  };
+  const out = renderTemplate(DEFAULT_NOTE_TEMPLATE, vars);
+  check('the shipped template writes the heading it is given', out.includes('\n## Comment\n'), '    out: ' + out);
+  check('and does not hard-code one', DEFAULT_NOTE_TEMPLATE.includes('{{bodyHeading}}'), '');
+  check('the filename preview offers it too',
+    'bodyHeading' in m.sampleFilenameVars({ dateFormat: 'YYYY-MM-DD', author: '', bodyHeading: 'Linknote' }, new Date()),
+    '');
 }
 
 console.log('\nthe shipped default with an empty note and no author');
@@ -457,6 +472,7 @@ console.log('\nthe shipped default with an empty note and no author');
     selectionYaml: '',
     titleShort: 'Close date',
     body: '',
+    bodyHeading: 'Linknote',
   };
   const out = tidy(renderTemplate(DEFAULT_NOTE_TEMPLATE, vars));
   // Empty properties are valid YAML nulls; what matters is that nothing dangles.
@@ -484,6 +500,7 @@ console.log('\ntemplate presets');
     embed: '![[Team handbook#^k3n8v1]]', blockId: 'k3n8v1',
     author: 'A. Reader', summary: 'Team handbook — the tenth business day',
     titleShort: 'Close date', bodyQuote: '> Confirmed.', bodyYaml: '|-\n  Confirmed.',
+    bodyHeading: 'Linknote',
   };
   eq('five presets ship', TEMPLATE_PRESETS.length, 5);
   for (const preset of TEMPLATE_PRESETS) {

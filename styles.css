@@ -157,6 +157,14 @@ body.is-mobile .lkn-modal-mobile .lkn-buttons {
 }
 
 /* Linknote — settings */
+
+/* A slider's value, readable without dragging it. */
+.lkn-value {
+  margin-top: 2px;
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
 textarea.lkn-template {
   width: 100%;
   min-height: 260px;
@@ -214,8 +222,8 @@ textarea.lkn-template {
 }
 
 /* Plain style: leave it as an ordinary link, minus the underline. */
-.markdown-preview-view a.lkn-marker.lkn-marker-plain,
-.markdown-rendered a.lkn-marker.lkn-marker-plain {
+body.lkn-plain-marker .markdown-preview-view a.lkn-marker,
+body.lkn-plain-marker .markdown-rendered a.lkn-marker {
   display: inline;
   min-width: 0;
   padding: 0;
@@ -225,8 +233,8 @@ textarea.lkn-template {
   text-decoration: none;
 }
 
-.markdown-preview-view a.lkn-marker.lkn-marker-plain:hover,
-.markdown-rendered a.lkn-marker.lkn-marker-plain:hover {
+body.lkn-plain-marker .markdown-preview-view a.lkn-marker:hover,
+body.lkn-plain-marker .markdown-rendered a.lkn-marker:hover {
   background-color: transparent;
   text-decoration: underline;
 }
@@ -244,8 +252,8 @@ textarea.lkn-template {
   position: relative;
 }
 
-.markdown-preview-view .lkn-anchored::before,
-.markdown-rendered .lkn-anchored::before {
+body.lkn-rule-anchored .markdown-preview-view .lkn-anchored::before,
+body.lkn-rule-anchored .markdown-rendered .lkn-anchored::before {
   content: '';
   position: absolute;
   left: -12px;
@@ -258,8 +266,8 @@ textarea.lkn-template {
 }
 
 /* Inside a list the rule sits closer, clear of the bullet or number. */
-.markdown-preview-view li.lkn-anchored::before,
-.markdown-rendered li.lkn-anchored::before {
+body.lkn-rule-anchored .markdown-preview-view li.lkn-anchored::before,
+body.lkn-rule-anchored .markdown-rendered li.lkn-anchored::before {
   left: -8px;
 }
 
@@ -482,6 +490,70 @@ body.is-mobile .markdown-rendered li.lkn-anchored::before {
 
 .lkn-card .lkn-card-title:hover {
   color: var(--text-accent);
+}
+
+/*
+ * Room for a task's checkbox. Obsidian lays the box out to the left of the
+ * item, in the space a list's own indent leaves; inside a card that indent is
+ * the card's edge, so the box was cut in half by it.
+ */
+.lkn-card .lkn-card-body ul,
+.lkn-card .lkn-card-body ol,
+.lkn-list .lkn-list-body ul,
+.lkn-list .lkn-list-body ol {
+  margin: 0;
+  padding-left: 1.6em;
+}
+
+.lkn-card .lkn-card-body .task-list-item,
+.lkn-list .lkn-list-body .task-list-item {
+  list-style: none;
+}
+
+.lkn-card .lkn-card-body .task-list-item-checkbox,
+.lkn-list .lkn-list-body .task-list-item-checkbox {
+  margin-left: -1.4em;
+  margin-right: 0.35em;
+}
+
+/*
+ * A card is a narrow column, so a task list indented like body text loses a
+ * good part of its width to empty space before the box. At the top level of a
+ * card the checkbox sits at the edge and the text follows it; nested lists
+ * keep their indent, and the sidebar list keeps the ordinary one.
+ */
+.lkn-card .lkn-card-body ul.contains-task-list,
+.lkn-card .lkn-card-body ol.contains-task-list {
+  padding-left: 0;
+}
+
+.lkn-card .lkn-card-body .task-list-item-checkbox {
+  margin-left: 0;
+}
+
+.lkn-card .lkn-card-body .task-list-item {
+  margin-left: 0;
+  padding-left: 0;
+  text-indent: 0;
+}
+
+/* A list nested inside a task keeps its step in, or the levels run together. */
+.lkn-card .lkn-card-body li ul,
+.lkn-card .lkn-card-body li ol {
+  padding-left: 1.2em;
+}
+
+/* The rows carry rendered markdown now, so they need the same tidying. */
+.lkn-list .lkn-list-body > :first-child {
+  margin-top: 0;
+}
+
+.lkn-list .lkn-list-body > :last-child {
+  margin-bottom: 0;
+}
+
+.lkn-list .lkn-list-body p {
+  margin: 0 0 4px 0;
 }
 
 .lkn-card .lkn-card-body > :first-child {
@@ -714,7 +786,6 @@ body.is-mobile .lkn-list .lkn-list-remove {
 
 .lkn-list .lkn-list-body {
   color: var(--text-normal);
-  white-space: pre-wrap;
 }
 
 body.is-mobile .lkn-sheet {
@@ -726,7 +797,7 @@ body.is-mobile .lkn-sheet {
  * the browser's highlight registry, so nothing in the note or in Obsidian's
  * rendered tree is altered — and it fades of its own accord.
  */
-::highlight(lkn-hit) {
+::highlight(linknote-passage) {
   background-color: hsla(var(--accent-h, 254), var(--accent-s, 80%), var(--accent-l, 68%), 0.4);
   color: var(--text-normal);
 }

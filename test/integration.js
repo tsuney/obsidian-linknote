@@ -271,7 +271,7 @@ async function main() {
       note,
       '---\ntype: Linknote\ncreated: ' + note.match(/created: (.+)/)[1] + '\nsource: "[[Team handbook#^' + id + ']]"\n' +
         'author:\nselection: |-\n  the tenth business day\nbody: |-\n  Confirmed with Finance.\n---\n' +
-        '> [!NOTE]- Close date... [[Team handbook#^' + id + ']]\n> the tenth business day\n\n' +
+        '> [!NOTE]- Close date... [[Team handbook#^' + id + ']]\n> the tenth business day\n' +
         '## Linknote\nConfirmed with Finance.\n'
     );
     check('the other paragraph was left alone', source.includes('\nExpenses are filed weekly.\n'));
