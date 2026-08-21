@@ -1280,6 +1280,103 @@ console.log('\nthe inbox — showing only what is unread');
   );
 }
 
+console.log('\nchat notifications — what may leave the vault');
+{
+  const { chatText, safeWebhook } = m;
+
+  eq(
+    'one linknote from one person',
+    chatText([{ author: 'Yamada', kind: 'new' }]),
+    'Linknote — 1 linknote on your notes (Yamada: 1)'
+  );
+  eq(
+    'several are counted per author',
+    chatText([
+      { author: 'Yamada', kind: 'new' },
+      { author: 'Sato', kind: 'edited' },
+      { author: 'Yamada', kind: 'new' },
+    ]),
+    'Linknote — 3 linknotes on your notes (Yamada: 2 · Sato: 1)'
+  );
+  eq('nothing to say, nothing said', chatText([]), '');
+  eq(
+    'a linknote naming nobody is still counted',
+    chatText([{ author: '', kind: 'new' }]),
+    'Linknote — 1 linknote on your notes ((no author): 1)'
+  );
+
+  // The whole point of the format: the message carries no content.
+  const line = chatText([
+    { author: 'Yamada', kind: 'new', note: 'NEC negotiating position', text: 'confidential' },
+  ]);
+  check('the note name does not leave the vault', line.indexOf('NEC') === -1);
+  check('nor does any of the text', line.indexOf('confidential') === -1);
+
+  check('an https address is kept', !!safeWebhook('https://qyapi.weixin.qq.com/x?key=k'));
+  eq('a plain http address is refused', safeWebhook('http://example.com/hook'), '');
+  eq('so is a bare word', safeWebhook('not-a-url'), '');
+  eq('and an empty setting', safeWebhook(''), '');
+  eq('and one that is only spaces', safeWebhook('   '), '');
+  eq('surrounding space is trimmed', safeWebhook('  https://a.example/h  '), 'https://a.example/h');
+  eq('an address with a space inside is refused', safeWebhook('https://a.example/h k'), '');
+}
+
+console.log('\nchat notifications — whose note is it');
+{
+  const { isOwnNote, namesOf } = m;
+
+  // The case that shipped broken: the vault's notes are signed "Tsuneyama",
+  // the plugin's Author is the per-device "Tsune", and judging both by the
+  // one setting meant no note was ever recognised as the reader's own.
+  check('the device name alone does not match the note name', !isOwnNote('Tsuneyama', ['Tsune']));
+  check('naming the note author explicitly does', isOwnNote('Tsuneyama', ['Tsuneyama']));
+  check('several names may be given', isOwnNote('Tsuneyama', ['Tsune', 'Tsuneyama']));
+
+  // authorOf joins a YAML list with ", ", so a note written by two people
+  // arrives here as one string.
+  check('a note naming you among others is yours', isOwnNote('Sato, Tsuneyama', ['Tsuneyama']));
+  check('a note naming only other people is not', !isOwnNote('Sato, Yamada', ['Tsuneyama']));
+  check('spacing does not decide it', isOwnNote('  Sato ,  Tsuneyama  ', ['Tsuneyama']));
+
+  check('a note naming nobody is nobody’s', !isOwnNote('', ['Tsuneyama']));
+  check('and with no name of your own, nothing is yours', !isOwnNote('Tsuneyama', []));
+  check('a partial name is not a match', !isOwnNote('Tsuneyamada', ['Tsuneyama']));
+
+  eq('one name', namesOf('Tsuneyama').join('|'), 'Tsuneyama');
+  eq('several, trimmed', namesOf(' A , B ,, C ').join('|'), 'A|B|C');
+  eq('nothing at all', namesOf('').length, 0);
+  eq('nothing is not a name', namesOf(null).length, 0);
+}
+
+console.log('\nchat notifications — the address is this device’s alone');
+{
+  const { sanitizeChatConfig, sanitizeSettings } = m;
+
+  // The whole point: a shared vault must not carry one person's channel to
+  // everyone. sanitizeSettings keeps only the keys it knows, so an address
+  // arriving in a synced settings file is dropped rather than adopted.
+  const kept = sanitizeSettings({ chatWebhook: 'https://a.example/h', chatNotify: true, author: 'Yamada' });
+  check('a webhook in the settings file is not kept', !('chatWebhook' in kept));
+  check('nor is the switch that goes with it', !('chatNotify' in kept));
+  eq('the settings that do belong there survive', kept.author, 'Yamada');
+
+  const sound = sanitizeChatConfig({ on: true, webhook: 'https://a.example/h' });
+  check('a sound configuration is on', sound.on);
+  eq('and keeps its address', sound.webhook, 'https://a.example/h');
+
+  const noUrl = sanitizeChatConfig({ on: true, webhook: '' });
+  check('on with no address is not on — it would do nothing', !noUrl.on);
+
+  const httpOnly = sanitizeChatConfig({ on: true, webhook: 'http://a.example/h' });
+  check('an http address is refused', !httpOnly.webhook);
+  check('and cannot leave it switched on', !httpOnly.on);
+
+  const nothing = sanitizeChatConfig(null);
+  check('nothing stored means off', !nothing.on);
+  eq('and no address', nothing.webhook, '');
+  check('a bare string means off too', !sanitizeChatConfig('yes').on);
+}
+
 console.log('\nthe inbox — when a linknote counts as read');
 {
   const { readsOnShowing } = m;

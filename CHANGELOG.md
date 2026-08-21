@@ -1,5 +1,15 @@
 # Changelog
 
+### 0.22.0
+
+- **A chat notification, for when Obsidian is not what you are looking at.** When someone else annotates a note *you* wrote, one line can be posted to a chat channel: a WeCom (企业微信) group robot address, or anything else accepting the same JSON. Both halves of the condition are judged by the author property — the linknote's author is not you, and the source note's author is — so **Author** has to be set on every device for it to work at all.
+- **Whose note it is, and who wrote the linknote, are two questions with two answers.** A new setting, **Your name in note properties**, says how a note of yours signs itself. The Author above it is per device on purpose — so that a linknote written on a phone can be told from one written at a desk — while your notes name you once, as a person, and often not by the same word. Judged by the one setting, a note signed `Tsuneyama` was never recognised as belonging to `Tsune`, and the message it should have raised silently never went. Several names can be given, separated by commas; a note naming you among others counts as yours. Left empty, the Author is used.
+- **The message carries a count and the authors. Nothing else.** No note name, no passage, no text. What gets annotated is often the part of a vault that should least leave it, and a title alone can carry that; the line says enough to make you open Obsidian, which is where the content stays.
+- **The address is kept on the device, not in the vault.** A shared vault is exactly the case this feature is for, and Obsidian can be told to sync plugin settings — so an address in `data.json` would become everyone's, and three people would post their news into one person's channel. It goes where the read marks go: this device's local storage, per vault. Each person sets their own; a second machine needs it typing again, which for a per-person destination is the right way round.
+- Off by default, with no address until you give it one, and **HTTPS only** — a webhook address is itself a secret, and over plain HTTP it would travel in clear. Switching it on without an address does nothing, so it does not switch on. Desktop only: a phone does not keep a plugin running in the background, and the chat app is already on it.
+- A **Send a test message** button in settings, so the address can be proved before it is relied on. A failure to send is always said out loud: a notification that quietly stops arriving is worse than none, because it is trusted.
+- The README no longer says the plugin sends nothing anywhere, because with this turned on it is not true. It says what is sent, and what never is.
+
 ### 0.21.2
 
 - **Acknowledging a linknote in one place clears it everywhere.** The tick in the sidebar marked the linknote read and brought the count down, but the card in the note went on wearing its accent and its own tick, because each tick only tidied the thing it sat on. Both now clear every card of that linknote, in every open pane — as does opening the linknote as a note, and **Mark all read**.

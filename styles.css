@@ -992,3 +992,10 @@ body.is-mobile .lkn-sheet {
   color: var(--text-on-accent);
   background-color: var(--interactive-accent);
 }
+
+/* The webhook address is long and is typed once; the field should not make
+ * that harder than it is. */
+.lkn-wide-input {
+  width: 100%;
+  min-width: 220px;
+}

@@ -13,7 +13,7 @@ The point is that your commentary lives in a separate, ordinary note. It shows u
 - Shows the linknotes of the note you are reading as cards beside the text, and as a list in the sidebar.
 - Shows which words each one is about, and points at them in the text.
 - Removes a linknote and its marker together, after saying exactly what will happen.
-- Nothing is sent anywhere: the plugin makes no network requests and stores nothing outside your vault.
+- Nothing leaves your vault unless you ask it to. The plugin makes no network requests and stores nothing outside your vault, with one exception you turn on yourself: an optional chat notification, which posts a count and a list of authors — never a note name, never any text. It is off by default and has no address until you give it one.
 
 ## How it works
 
@@ -173,6 +173,8 @@ The note is the original and the property is a copy of it. **Editing the propert
 
 A vault shared between people — Obsidian Sync, which is paid, or any file-sync tool, since a linknote is plain Markdown — lets several readers annotate one note. Each linknote is a file of its own, so two people writing at the same time do not overwrite each other: one note accumulates commentary from several authors, each piece anchored to the block it was made from, and each staying on its passage as the note is revised.
 
+> **Before anything else, turn off Obsidian Sync's *Installed community plugins*, on every device.** That option syncs plugin files *and their settings*, and **Author** is one of those settings — so in a shared vault everyone ends up with one person's name. Nothing errors; the judgement simply inverts, and your own linknotes start being announced to you as somebody else's while theirs go quiet. The option is per device, so one machine left on is enough to keep overwriting everyone. With it off, the plugin still reaches every device through the community catalogue or BRAT.
+
 Set **Author** on each device, and give each person a different **Marker character**. Cards and sidebar rows are then headed by the marker, the author and the date, so who wrote what is clear at a glance. Everyone should use the same **Linknote folder**: that is how a marker written with someone else's character is recognized here. On a call, share the screen in Reading view and write the linknote as the point comes up.
 
 Other people's linknotes announce themselves. As they arrive over sync — and on start-up, for whatever came in while the vault was closed — one notice sums them up by author: *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)*. Clicking it opens the inbox. A notice does not wait for you, so the ribbon icon also carries the number of linknotes still unread, which stays until they have been read. Linknotes whose author matches your own **Author** setting are never announced, and read marks are kept per device, in the app's local storage — they are this device's memory of what it has shown you, and never travel over sync. The notice can be turned off in settings; the dots stay either way.
@@ -209,6 +211,9 @@ Linknote does nothing about conflicts. Two people editing one source note at the
 | Open the linknote after creating it | off | opens in a split, once the block reference resolves |
 | Notify when linknotes change | on | one notice per burst of other people's additions and edits; unread dots stay either way |
 | Count a linknote as read | When you say so | the tick on a card or row, or opening the linknote; *When it is shown* clears it as a card or row draws it |
+| Your name in note properties | empty | how a note of yours signs itself, which is often not the per-device Author; comma-separated for several. Empty means use Author |
+| Post to a chat channel | off | one line to a webhook when someone else annotates a note of yours; the only thing this plugin ever sends |
+| Webhook address | empty | HTTPS only. A WeCom group robot address, or anything accepting the same JSON. Kept on the device rather than in the vault, so each person in a shared vault has their own |
 
 ## How the anchoring works
 
@@ -250,6 +255,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 ## Changelog
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
+
+### 0.22.0
+
+- Optional chat notifications: when someone else annotates a note you wrote, one line can be posted to a WeCom group robot webhook. Counts and authors only. Off by default, desktop only.
 
 ### 0.21.2
 

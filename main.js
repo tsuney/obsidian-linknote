@@ -26,6 +26,7 @@ const {
   MarkdownRenderChild,
   ItemView,
   normalizePath,
+  requestUrl,
 } = obsidian;
 
 /* --------------------------------------------------------------------------
@@ -175,6 +176,7 @@ const DEFAULT_SETTINGS = {
   notifyOthers: true,
   listScope: 'note',
   readOn: 'open',
+  noteAuthor: '',
 };
 
 /*
@@ -534,6 +536,20 @@ function safeFolder(value) {
 }
 
 /**
+ * A webhook address that is safe to post to, or nothing.
+ *
+ * HTTPS only. A webhook carries its secret in the address itself, so over
+ * plain HTTP the secret would go out in clear and anyone on the wire could
+ * post to the channel afterwards.
+ */
+function safeWebhook(value) {
+  const url = String(value == null ? '' : value).trim();
+  if (!url) return '';
+  if (!/^https:\/\/[^\s]+$/i.test(url)) return '';
+  return url;
+}
+
+/**
  * Settings as read from data.json, made safe to use. The file is ordinary
  * JSON in the vault: it can be hand-edited, or arrive over sync from another
  * device, so nothing in it is trusted to be the right shape.
@@ -560,6 +576,7 @@ function sanitizeSettings(data) {
   const folder = safeFolder(out.folder);
   if (!folder) delete out.folder;
   else out.folder = folder;
+
 
   if (typeof out.filenameTemplate === 'string' && !out.filenameTemplate.trim()) {
     delete out.filenameTemplate;
@@ -1245,6 +1262,8 @@ class LinknotePlugin extends Plugin {
     this.viewObservers = null;
     this.recentWrites = new Map();
     this.quietUntil = Date.now() + STARTUP_QUIET_MS;
+    this.chat = { on: false, webhook: '' };
+    this.loadChatConfig();
 
     this.registerMarkdownPostProcessor((el, ctx) => {
       // Guarded as a whole: anything thrown here would stop Obsidian drawing
@@ -1490,7 +1509,12 @@ class LinknotePlugin extends Plugin {
   /* ------------------------------------------------------------- settings */
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, sanitizeSettings(await this.loadData()));
+    const raw = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, sanitizeSettings(raw));
+    // 0.22.0 kept the webhook here for a day. sanitizeSettings drops unknown
+    // keys, so it would simply vanish; it is carried over to where it belongs
+    // instead, and the next save takes it out of the file.
+    this.strayChat = raw && typeof raw === 'object' && raw.chatWebhook ? raw : null;
   }
 
   async saveSettings() {
@@ -3707,6 +3731,56 @@ class LinknotePlugin extends Plugin {
     }
   }
 
+  /* ----------------------------------------------- chat, per device only */
+
+  chatKey() {
+    return 'linknote/' + this.app.vault.getName() + '/chat';
+  }
+
+  /**
+   * Where this device posts, and whether it posts at all.
+   *
+   * In localStorage rather than in the settings file, for the same reason the
+   * read marks are: a vault shared between people is the case this feature is
+   * for, and Obsidian can be told to sync plugin settings. If the address
+   * lived in data.json, one person's channel would become everyone's, and
+   * three people would post their news into it. It is also a secret — the
+   * address is the whole of the authentication — and a secret does not belong
+   * in a file inside the vault.
+   *
+   * The cost is that it does not travel: a second machine needs the address
+   * typing again. For a per-person destination that is the right way round.
+   */
+  loadChatConfig() {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(window.localStorage.getItem(this.chatKey()) || 'null');
+    } catch (e) {
+      parsed = null;
+    }
+    this.chat = sanitizeChatConfig(parsed);
+
+    // Anything the previous version left in the settings file is adopted here
+    // and then cleared from there, so the address ends up in one place only.
+    if (this.strayChat) {
+      const rescued = safeWebhook(this.strayChat.chatWebhook);
+      if (rescued && !this.chat.webhook) {
+        this.chat = { on: !!this.strayChat.chatNotify, webhook: rescued };
+        this.saveChatConfig();
+      }
+      this.strayChat = null;
+      this.saveSettings();
+    }
+  }
+
+  saveChatConfig() {
+    try {
+      window.localStorage.setItem(this.chatKey(), JSON.stringify(this.chat || { on: false, webhook: '' }));
+    } catch (e) {
+      new Notice('Linknote: the chat settings could not be saved on this device.');
+    }
+  }
+
   seenStateKey() {
     return 'linknote/' + this.app.vault.getName() + '/state';
   }
@@ -3863,6 +3937,7 @@ class LinknotePlugin extends Plugin {
     this.pendingChanges = null;
 
     const changes = [];
+    const mine = [];
     for (const path of pending) {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!(file instanceof TFile) || !this.isLinknote(file)) continue;
@@ -3883,12 +3958,87 @@ class LinknotePlugin extends Plugin {
       if (told != null && mtime <= told) continue;
       this.seenState.told[path] = mtime;
 
-      changes.push({ author, kind: known == null ? 'new' : 'edited' });
+      const change = { author, kind: known == null ? 'new' : 'edited' };
+      changes.push(change);
+      // A chat message is only for what lands on a note of your own. The
+      // in-app notice covers everything; this one is the tap on the shoulder
+      // that reaches you when Obsidian is not what you are looking at.
+      if (this.isOnMyNote(file)) mine.push(change);
     }
 
     if (!changes.length) return;
     this.saveSeenState(true);
     if (this.settings.notifyOthers) this.showUpdateNotice(noticeText(changes));
+    if (mine.length) this.postToChat(mine);
+  }
+
+  /**
+   * Was this linknote written on a note of mine?
+   *
+   * Judged the same way everything else here is judged: by the author named
+   * in the frontmatter. The source note is found through the linknote's own
+   * `source` property, resolved by the metadata cache — a name in a wikilink
+   * is not a path, and only Obsidian knows which note it means.
+   */
+  isOnMyNote(linknote) {
+    try {
+      const { source } = this.sourceOfLinknote(linknote);
+      if (!source) return false;
+      const fm = (this.app.metadataCache.getFileCache(source) || {}).frontmatter || null;
+      // The name your notes call you by, which is not always the name your
+      // linknotes are signed with. Falls back to the Author when unset.
+      const names = namesOf(this.settings.noteAuthor || this.settings.author);
+      return isOwnNote(authorOf(fm), names);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Posts one line to a chat channel. Desktop only: a phone does not keep a
+   * plugin running in the background, and the chat app is already on it.
+   *
+   * A failure is said out loud. A notification that quietly stops arriving is
+   * worse than none, because it is trusted.
+   */
+  async postToChat(changes) {
+    if (Platform.isMobile || !this.chat || !this.chat.on) return;
+    const url = safeWebhook(this.chat.webhook);
+    const content = chatText(changes);
+    if (!url || !content) return;
+    const failed = await this.sendChat(url, content);
+    if (failed) new Notice('Linknote: the chat message was not sent — ' + failed);
+  }
+
+  /**
+   * The request itself. Returns an empty string on success, or why it failed.
+   *
+   * WeCom answers 200 with an error code in the body, so the body is checked
+   * as well as the status; otherwise a wrong key looks like a success.
+   */
+  async sendChat(url, content) {
+    try {
+      const res = await requestUrl({
+        url,
+        method: 'POST',
+        contentType: 'application/json',
+        body: JSON.stringify({ msgtype: 'markdown', markdown: { content } }),
+        throw: false,
+      });
+      if (res.status < 200 || res.status >= 300) return 'HTTP ' + res.status;
+      let payload = null;
+      try {
+        payload = res.json;
+      } catch (e) {
+        payload = null;
+      }
+      if (payload && payload.errcode) {
+        return 'error ' + payload.errcode + (payload.errmsg ? ' ' + payload.errmsg : '');
+      }
+      return '';
+    } catch (e) {
+      return (e && e.message) || 'the request did not go through';
+    }
   }
 
   /** The notice is also the doorway: clicking it opens the vault-wide list. */
@@ -4275,6 +4425,35 @@ function isOwnAuthor(author, self) {
   return !!a && !!s && a === s;
 }
 
+/** A setting that may name several people, as a list of names. */
+function namesOf(value) {
+  return String(value == null ? '' : value)
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Is a note with this author property one of mine?
+ *
+ * A different question from isOwnAuthor, and the two needed separating. Which
+ * device wrote a linknote is told by the Author setting, and two devices of
+ * one person are deliberately given different names there so that what came
+ * from the phone can be told from what came from the desk. Whose *note* it is
+ * has nothing to do with devices: it is whatever name the vault's own notes
+ * use for you, which may be none of those. Judging both by the one setting
+ * meant a note by "Tsuneyama" was never recognised as belonging to "Tsune",
+ * and the notification it should have raised never went out.
+ *
+ * Either side may list several people. A note you wrote with someone else is
+ * still yours.
+ */
+function isOwnNote(noteAuthor, names) {
+  const listed = namesOf(noteAuthor);
+  if (!listed.length || !names.length) return false;
+  return names.some((mine) => listed.indexOf(mine) !== -1);
+}
+
 /**
  * What changed between what this device knew and what is on disk now. Both
  * sides map path → mtime. A path not yet known is new; a later mtime is an
@@ -4346,11 +4525,57 @@ function readsOnShowing(settings) {
   return !!settings && settings.readOn === 'shown';
 }
 
+/**
+ * The line posted to a chat channel: how many, and from whom. Nothing else.
+ *
+ * Deliberately no note name and no text. What is annotated is often the part
+ * of a vault that should least leave it — a negotiating position, a personnel
+ * note — and a title alone can carry that. This says enough to make someone
+ * open Obsidian, which is where the content stays.
+ */
+function chatText(changes) {
+  const list = (changes || []).filter(Boolean);
+  if (!list.length) return '';
+
+  const authors = new Map();
+  for (const change of list) {
+    const name = String(change.author || '').trim() || '(no author)';
+    authors.set(name, (authors.get(name) || 0) + 1);
+  }
+  const who = Array.from(authors, ([name, count]) => name + ': ' + count).join(' · ');
+
+  const n = list.length;
+  return (
+    'Linknote — ' +
+    n +
+    (n === 1 ? ' linknote' : ' linknotes') +
+    ' on your notes (' +
+    who +
+    ')'
+  );
+}
+
 /** The unread count as it is drawn on the ribbon; nothing at all when zero. */
 function badgeText(count) {
   const n = Number(count);
   if (!Number.isFinite(n) || n <= 0) return '';
   return n > 99 ? '99+' : String(Math.floor(n));
+}
+
+/**
+ * The chat settings as they came out of localStorage, checked before use.
+ *
+ * Kept apart from the read state on purpose: a webhook that fails to parse
+ * must not cost anyone their read marks, and the two have nothing to do with
+ * each other beyond both being this device's business alone.
+ */
+function sanitizeChatConfig(data) {
+  const out = { on: false, webhook: '' };
+  if (!data || typeof data !== 'object') return out;
+  out.webhook = safeWebhook(data.webhook);
+  // On with no address does nothing, so it is not on.
+  out.on = !!data.on && !!out.webhook;
+  return out;
 }
 
 /**
@@ -5581,6 +5806,109 @@ class LinknoteSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+
+    /* ------------------------------------------------ chat notifications */
+
+    new Setting(containerEl).setName('Chat notifications').setHeading();
+
+    containerEl.createEl('p', {
+      cls: 'setting-item-description lkn-preview',
+      text:
+        'Everything above stays inside Obsidian. This one part does not: when someone else ' +
+        'annotates a note you wrote, a single line is posted to a chat channel of your choosing — ' +
+        'so it reaches you when Obsidian is not what you are looking at. It is off until you turn ' +
+        'it on and give it an address.',
+    });
+
+    const chat = this.plugin.chat || { on: false, webhook: '' };
+
+    new Setting(containerEl)
+      .setName('Post to a chat channel')
+      .setDesc(
+        'Only for linknotes written by someone else on a note whose author is you — both judged by ' +
+          'the author property, so set Author above on every device. Desktop only: a phone does not ' +
+          'keep a plugin running, and the chat app is already there. Nothing else about the plugin ' +
+          'sends anything anywhere.'
+      )
+      .addToggle((t) =>
+        t.setValue(chat.on).onChange((v) => {
+          chat.on = v && !!safeWebhook(chat.webhook);
+          this.plugin.chat = chat;
+          this.plugin.saveChatConfig();
+          if (v && !chat.on) new Notice('Linknote: enter an https:// webhook address first.');
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Your name in note properties')
+      .setDesc(
+        'How a note of yours says it is yours — the name in its own author property. That is often ' +
+          'not the name above: the Author is per device, so that a linknote written on your phone ' +
+          'can be told from one written at your desk, while your notes name you once as a person. ' +
+          'Several names can be given, separated by commas, and a note naming you among others ' +
+          'counts as yours. Left empty, the Author above is used.'
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder(s.author || '(the Author above)')
+          .setValue(s.noteAuthor)
+          .onChange(async (v) => {
+            s.noteAuthor = v.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Webhook address')
+      .setDesc(
+        'A WeCom (企业微信) group robot address, or anything else that accepts the same JSON. HTTPS ' +
+          'only — the address is itself the secret, which is why it is kept on this device and never ' +
+          'in the vault: in a shared vault, an address in the settings file would become everyone’s, ' +
+          'and all three of you would post into one person’s channel. Each person sets their own, and ' +
+          'a second machine needs it typing again.'
+      )
+      .addText((t) => {
+        t.setPlaceholder('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…')
+          .setValue(chat.webhook)
+          .onChange((v) => {
+            chat.webhook = safeWebhook(v);
+            if (!chat.webhook) chat.on = false;
+            this.plugin.chat = chat;
+            this.plugin.saveChatConfig();
+          });
+        t.inputEl.type = 'password';
+        t.inputEl.addClass('lkn-wide-input');
+        // What was actually kept, once the typing has stopped — the same
+        // courtesy the folder field gets.
+        t.inputEl.addEventListener('blur', () => {
+          if (t.inputEl.value !== chat.webhook) t.inputEl.value = chat.webhook;
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Send a test message')
+      .setDesc(
+        'Posts one line now, so you can see it arrive before relying on it. What a real message ' +
+          'says is the count and the authors — never a note name and never any of the text.'
+      )
+      .addButton((b) =>
+        b.setButtonText('Send').onClick(async () => {
+          const url = safeWebhook(chat.webhook);
+          if (!url) {
+            new Notice('Linknote: enter an https:// webhook address first.');
+            return;
+          }
+          b.setDisabled(true);
+          const failed = await this.plugin.sendChat(
+            url,
+            chatText([{ author: s.author || '(no author)', kind: 'new' }]) + ' — test'
+          );
+          b.setDisabled(false);
+          new Notice(
+            failed ? 'Linknote: the test was not sent — ' + failed : 'Linknote: the test was sent.'
+          );
+        })
+      );
   }
 }
 
@@ -5626,6 +5954,11 @@ module.exports.sanitizeSeenState = sanitizeSeenState;
 module.exports.headSlot = headSlot;
 module.exports.badgeText = badgeText;
 module.exports.readsOnShowing = readsOnShowing;
+module.exports.chatText = chatText;
+module.exports.safeWebhook = safeWebhook;
+module.exports.sanitizeChatConfig = sanitizeChatConfig;
+module.exports.isOwnNote = isOwnNote;
+module.exports.namesOf = namesOf;
 module.exports.rowMatches = rowMatches;
 module.exports.sortRows = sortRows;
 module.exports.unreadOnly = unreadOnly;
