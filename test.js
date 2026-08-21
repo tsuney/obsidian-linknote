@@ -1198,6 +1198,42 @@ console.log('\nthe inbox — what heads a row');
   eq('unread with no marker still shows the dot', headSlot(true, ''), 'dot');
 }
 
+console.log('\nthe inbox — showing only what is unread');
+{
+  const { unreadOnly, sortRows } = m;
+  check('the unread choice narrows the list', unreadOnly('unread'));
+  check('an ordinary order does not', !unreadOnly('modified'));
+  check('nor does the default', !unreadOnly('position'));
+  check('nor an unknown one', !unreadOnly('whatever'));
+
+  // What is left after the filter is ordered newest first, like any inbox.
+  const rows = [
+    { index: 0, modified: 100, unread: true },
+    { index: 1, modified: 300, unread: false },
+    { index: 2, modified: 200, unread: true },
+  ];
+  const kept = rows.filter((r) => r.unread);
+  eq('only the unread rows survive', kept.length, 2);
+  eq(
+    'and they come newest first',
+    sortRows(kept, 'unread').map((r) => r.modified).join(','),
+    '200,100'
+  );
+  eq(
+    'rows with the same time keep the order they had',
+    sortRows(
+      [
+        { index: 0, modified: 50, unread: true },
+        { index: 1, modified: 50, unread: true },
+      ],
+      'unread'
+    )
+      .map((r) => r.index)
+      .join(','),
+    '0,1'
+  );
+}
+
 console.log('\nthe inbox — when a linknote counts as read');
 {
   const { readsOnShowing } = m;

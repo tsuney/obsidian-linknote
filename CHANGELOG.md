@@ -1,5 +1,9 @@
 # Changelog
 
+### 0.21.1
+
+- **The sidebar list can show only what is unread.** *Unread only* joins the orders, and narrows the list to the linknotes still waiting — in this note, or across the vault, depending on the scope. What is left is ordered newest first. It sits among the orders because that is where you look to change what the list shows, and one control is easier to find than two. When nothing is waiting the list says so, rather than looking like a search that found nothing.
+
 ### 0.21.0
 
 - **A linknote is read when you say it has been read.** Until now a card drawing itself on screen was enough, which counted a linknote as taken in whether or not anyone had looked at it — and a count that clears itself by scrolling counts nothing. An unread linknote now stays unread until its card's tick is pressed, until the tick on its sidebar row is pressed, or until the linknote itself is opened as a note. The old behaviour is still available: **Count a linknote as read → When it is shown**.

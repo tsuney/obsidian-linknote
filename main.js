@@ -4148,7 +4148,11 @@ function sortRows(rows, mode) {
     list.sort((a, b) => compare(a, b) || (a.index || 0) - (b.index || 0));
 
   if (mode === 'created') return settle((a, b) => (b.created || 0) - (a.created || 0));
-  if (mode === 'modified') return settle((a, b) => (b.modified || 0) - (a.modified || 0));
+  // Unread is a filter rather than an order (see unreadOnly), and what is
+  // left of the list is most useful newest first, like any other inbox.
+  if (mode === 'modified' || mode === 'unread') {
+    return settle((a, b) => (b.modified || 0) - (a.modified || 0));
+  }
   if (mode === 'author') {
     return settle((a, b) => {
       const x = String(a.author || '');
@@ -4162,11 +4166,23 @@ function sortRows(rows, mode) {
   return settle(() => 0);
 }
 
+/**
+ * Whether this choice hides everything already read.
+ *
+ * It sits among the orders because that is where someone looks to change
+ * what the list shows, and one control is easier to find than two. What it
+ * does is narrow the list, not reorder it.
+ */
+function unreadOnly(mode) {
+  return mode === 'unread';
+}
+
 const LIST_SORTS = [
   ['position', 'In the note'],
   ['created', 'Newest first'],
   ['modified', 'Recently changed'],
   ['author', 'By author'],
+  ['unread', 'Unread only'],
 ];
 
 const LIST_SCOPES = [
@@ -4456,24 +4472,33 @@ class LinknoteListView extends ItemView {
         name: entry.file.basename,
         created: stat.ctime || 0,
         modified: stat.mtime || 0,
+        unread: this.plugin.isUnread(entry.file),
       });
     }
     if (this.drawTicket !== ticket) return;
-
-    const found = rows.filter((row) => rowMatches(row, this.query));
-    if (!found.length && String(this.query || '').trim()) {
-      el.empty();
-      el.createDiv({
-        cls: 'lkn-list-empty',
-        text: 'Nothing here matches “' + String(this.query).trim() + '”.',
-      });
-      return;
-    }
 
     let order = this.plugin.settings.listSort || DEFAULT_SETTINGS.listSort;
     // "In the note" orders by position in one note; across the vault there is
     // no such thing, and recently changed is what an inbox wants anyway.
     if (vaultWide && order === 'position') order = 'modified';
+    const onlyUnread = unreadOnly(order);
+
+    let found = rows.filter((row) => rowMatches(row, this.query));
+    if (onlyUnread) found = found.filter((row) => row.unread);
+
+    // Told apart, because an empty list means different things: nothing
+    // matched what was typed, or nothing is waiting to be read.
+    if (!found.length && (onlyUnread || String(this.query || '').trim())) {
+      el.empty();
+      el.createDiv({
+        cls: 'lkn-list-empty',
+        text: onlyUnread
+          ? 'Nothing unread here.'
+          : 'Nothing here matches “' + String(this.query).trim() + '”.',
+      });
+      return;
+    }
+
     const wanted = sortRows(found, order).map((row) => row.entry);
     await this.plugin.renderLinknoteRows(
       el,
@@ -5541,6 +5566,7 @@ module.exports.badgeText = badgeText;
 module.exports.readsOnShowing = readsOnShowing;
 module.exports.rowMatches = rowMatches;
 module.exports.sortRows = sortRows;
+module.exports.unreadOnly = unreadOnly;
 module.exports.safeFolder = safeFolder;
 module.exports.linkDisplayText = linkDisplayText;
 module.exports.toggleTaskLine = toggleTaskLine;

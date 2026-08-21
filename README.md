@@ -130,7 +130,7 @@ Both are drawn as the note is rendered. **Nothing extra is written to your notes
 
 **Show the linknotes in this note** — from the command palette, or the ribbon icon — opens a list of every linknote you are reading carries, in the order they appear in it. Each row is headed the same way a card is — the marker, then who wrote it and when — followed by the words the linknote is about, and then the note itself. Pressing the passage goes to it in the source; pressing the row opens the linknote.
 
-Above the rows are a search box and an order. Typing narrows the list: every word has to appear somewhere in the row — the author, the note, the passage, or the file name — so two words narrow rather than widen, and nothing you type is treated as a pattern. The order can be the one in the note (the default), newest first, recently changed, or by author; it is remembered between sessions, and rows with nothing to separate them keep the order they have in the note.
+Above the rows are a search box and an order. Typing narrows the list: every word has to appear somewhere in the row — the author, the note, the passage, or the file name — so two words narrow rather than widen, and nothing you type is treated as a pattern. The order can be the one in the note (the default), newest first, recently changed, or by author; **Unread only** narrows the list to what is still waiting, newest first. The choice is remembered between sessions, and rows with nothing to separate them keep the order they have in the note.
 
 The cards answer "what is written here". The list answers "what has been written about this note, and where". On mobile it is the main answer, since a card has nowhere to go there.
 
@@ -250,6 +250,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 ## Changelog
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
+
+### 0.21.1
+
+- The sidebar list can show only what is unread: *Unread only* joins the orders, and works in either scope.
 
 ### 0.21.0
 
