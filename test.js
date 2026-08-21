@@ -997,6 +997,128 @@ console.log('\na foreign marker alone in its block still reaches the heading');
   eq('the heading move is asked for with the text found, not the setting', seen, '📱');
 }
 
+/* --------------------------------------------------------------------
+ * Card placement: margin or inline.
+ *
+ * A pane just wide enough is the whole question, and it is asked again
+ * every time something might have changed the answer. 0.20.0 shipped
+ * with cards that fell inline in a narrow pane and stayed there however
+ * wide it was made afterwards, so the way back is tested as well as the
+ * way out.
+ * ------------------------------------------------------------------ */
+
+function paneEl(tag, classes) {
+  const n = {
+    tagName: String(tag).toUpperCase(),
+    children: [],
+    parentElement: null,
+    isConnected: true,
+    width: 0,
+    _c: new Set(classes || []),
+    style: {
+      _p: {},
+      setProperty(k, v) { this._p[k] = v; },
+      removeProperty(k) { delete this._p[k]; },
+    },
+  };
+  n.classList = {
+    add: (c) => n._c.add(c),
+    remove: (c) => n._c.delete(c),
+    contains: (c) => n._c.has(c),
+    toggle: (c, on) => (on ? n._c.add(c) : n._c.delete(c)),
+  };
+  n.append = (k) => { k.parentElement = n; n.children.push(k); return n; };
+  n.closest = (sel) => {
+    const want = sel.replace('.', '');
+    for (let cur = n; cur; cur = cur.parentElement) if (cur._c.has(want)) return cur;
+    return null;
+  };
+  n.getBoundingClientRect = () => ({ width: n.width, top: 0, bottom: 0, height: 10 });
+  n.querySelectorAll = () => [];
+  return n;
+}
+
+function makePane() {
+  const frames = [];
+  const win = { requestAnimationFrame: (fn) => frames.push(fn) };
+  const doc = { defaultView: win };
+
+  const view = paneEl('div', ['markdown-preview-view']);
+  const host = paneEl('p');
+  const stack = paneEl('div', ['lkn-card-stack']);
+  view.append(host);
+  host.append(stack);
+  for (const n of [view, host, stack]) n.ownerDocument = doc;
+
+  const asked = { later: 0, observed: [] };
+  const plugin = {
+    settings: { cardPlacement: 'margin', cardWidth: 240, cardsPerStack: 3, showCards: true },
+    observeStack() {},
+    observeView(v) { asked.observed.push(v); },
+    scheduleRelayout() {},
+    capStack() {},
+    laterCardPass() { asked.later += 1; },
+  };
+
+  return {
+    view, host, stack, asked,
+    // A pane of this width, decided to the end.
+    fitAt(px) {
+      view.width = px;
+      m.prototype.fitStack.call(plugin, stack);
+      for (let i = 0; i < 12 && frames.length; i += 1) {
+        for (const fn of frames.splice(0)) fn();
+      }
+    },
+    detach() { stack.isConnected = false; },
+    inMargin: () => view._c.has('lkn-cards') && !stack._c.has('lkn-card-inline'),
+    inline: () => !view._c.has('lkn-cards') && stack._c.has('lkn-card-inline'),
+  };
+}
+
+console.log('\ncard placement — the way out and the way back');
+{
+  const pane = makePane();
+
+  pane.fitAt(1200);
+  check('a wide pane puts the card in the margin', pane.inMargin());
+
+  pane.fitAt(500);
+  check('a narrow pane drops it inline', pane.inline());
+
+  pane.fitAt(1200);
+  check('widening the pane again brings it back to the margin', pane.inMargin());
+
+  // 660px is the threshold for a 240px card: 240 + 24 + 16 + 380.
+  pane.fitAt(659);
+  check('a pane one pixel short is inline', pane.inline());
+  pane.fitAt(660);
+  check('a pane exactly wide enough is margin', pane.inMargin());
+}
+
+console.log('\ncard placement — the pane is watched, and a stall is retried');
+{
+  const pane = makePane();
+  pane.fitAt(1200);
+  check('the pane itself is observed, so a width change re-decides', pane.asked.observed.indexOf(pane.view) !== -1);
+
+  const stalled = makePane();
+  stalled.detach();
+  stalled.fitAt(1200);
+  eq('a stack still detached after every frame asks for a later pass', stalled.asked.later, 1);
+  stalled.fitAt(1200);
+  eq('but only once, so a stack that never attaches cannot ask forever', stalled.asked.later, 1);
+
+  const zero = makePane();
+  zero.fitAt(0);
+  eq('a pane with no width yet also asks for a later pass', zero.asked.later, 1);
+  zero.fitAt(1200);
+  check('and settles once the pane has been measured', zero.inMargin());
+  zero.detach();
+  zero.fitAt(1200);
+  eq('a decided card that stalls later may ask again', zero.asked.later, 2);
+}
+
 console.log('\nupdate notices — who a linknote belongs to');
 {
   const { authorOf, isOwnAuthor } = m;

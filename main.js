@@ -1235,6 +1235,9 @@ class LinknotePlugin extends Plugin {
     this.pendingChanges = null;
     this.noticeTimer = null;
     this.stateSaveTimer = null;
+    this.listRefreshTimer = null;
+    this.refitTimer = null;
+    this.viewObservers = null;
     this.recentWrites = new Map();
     this.quietUntil = Date.now() + STARTUP_QUIET_MS;
 
@@ -2726,6 +2729,54 @@ class LinknotePlugin extends Plugin {
   }
 
   /**
+   * Watches the pane a card lives in, so that a change in its width re-decides
+   * margin or inline.
+   *
+   * A window resize is not the only way a pane gets wider: collapsing a
+   * sidebar, closing a split, changing the zoom or the readable line width all
+   * do it, and none of them raise resize. Without this, a card that fell
+   * inline while the pane was narrow stayed inline however much room it was
+   * later given, because nothing asked the question again.
+   *
+   * The gutter is padding on this same element, so adding it does not change
+   * the width being watched and cannot set the observer off against itself.
+   */
+  observeView(view) {
+    try {
+      const doc = view.ownerDocument;
+      const win = (doc && doc.defaultView) || window;
+      if (!win || typeof win.ResizeObserver !== 'function') return;
+
+      if (!this.viewObservers) this.viewObservers = new WeakMap();
+      let observer = this.viewObservers.get(doc);
+      if (!observer) {
+        observer = new win.ResizeObserver(() => this.refitSoon());
+        this.viewObservers.set(doc, observer);
+        this.register(() => observer.disconnect());
+      }
+      observer.observe(view);
+    } catch (e) {
+      /* the window resize and the timed passes remain */
+    }
+  }
+
+  /**
+   * One re-fit per burst. Dragging a pane divider resizes it every frame, and
+   * measuring every card on every one of those frames is wasted work.
+   */
+  refitSoon() {
+    if (this.unloaded || this.refitTimer) return;
+    this.refitTimer = window.setTimeout(() => {
+      this.refitTimer = null;
+      if (this.unloaded) return;
+      this.refitCards();
+      this.syncCardLayout();
+      this.scheduleRelayout();
+    }, 120);
+    this.register(() => window.clearTimeout(this.refitTimer));
+  }
+
+  /**
    * Lets go of a stack that is about to be thrown away. A ResizeObserver holds
    * its targets, so without this every discarded stack — and the rendered
    * markdown inside it — stays reachable for as long as the plugin runs.
@@ -2753,10 +2804,21 @@ class LinknotePlugin extends Plugin {
       // Measuring a detached stack gives zeroes, which would read as no room.
       if (!card.isConnected) {
         if (attempt < 5) schedule(attempt + 1);
+        // Frames run out long before a re-rendering pane settles. Giving up
+        // here is what left a card inline for good: the placement had been
+        // decided narrow, and nothing asked again. Once only: a stack that
+        // stays detached would otherwise ask for a pass every 400ms forever.
+        else if (!card._lknLateRetry) {
+          card._lknLateRetry = true;
+          this.laterCardPass(400);
+        }
         return;
       }
       const view =
         (host.closest && (host.closest('.markdown-preview-view') || host.closest('.markdown-rendered'))) || null;
+      // Any change to the pane's width re-decides this, so widening it brings
+      // the cards back out of the text without waiting for a window resize.
+      if (view) this.observeView(view);
 
       let margin = !Platform.isMobile && this.settings.cardPlacement !== 'inline' && !!view;
       if (margin) {
@@ -2765,10 +2827,17 @@ class LinknotePlugin extends Plugin {
         // "no room" is what left the cards inline for good.
         if (!width) {
           if (attempt < 8) schedule(attempt + 1);
+          else if (!card._lknLateRetry) {
+            card._lknLateRetry = true;
+            this.laterCardPass(400);
+          }
           return;
         }
         margin = width >= cardMinPane(this.settings.cardWidth);
       }
+
+      // Measured and decided, so the next stall gets its late pass too.
+      card._lknLateRetry = false;
 
       if (view) view.classList.toggle('lkn-cards', margin);
       card.classList.toggle('lkn-card-inline', !margin);
@@ -3771,13 +3840,26 @@ class LinknotePlugin extends Plugin {
     return !isOwnAuthor(authorOf(fm), this.settings.author);
   }
 
-  /** Redraws every open sidebar list; each draw is ticketed, so bursts settle. */
+  /**
+   * Redraws every open sidebar list, once per burst.
+   *
+   * Not immediately: reading a linknote is announced from wherever it was
+   * shown — including from painting a card — and a redraw started in the
+   * middle of a card pass renders markdown, which sets the whole card
+   * machinery going again while it is still measuring. Coalescing here keeps
+   * one cause from turning into a storm.
+   */
   refreshListViews() {
-    if (this.unloaded) return;
-    for (const leaf of this.app.workspace.getLeavesOfType(LIST_VIEW_TYPE)) {
-      const view = leaf.view;
-      if (view && typeof view.draw === 'function') view.draw();
-    }
+    if (this.unloaded || this.listRefreshTimer) return;
+    this.listRefreshTimer = window.setTimeout(() => {
+      this.listRefreshTimer = null;
+      if (this.unloaded) return;
+      for (const leaf of this.app.workspace.getLeavesOfType(LIST_VIEW_TYPE)) {
+        const view = leaf.view;
+        if (view && typeof view.draw === 'function') view.draw();
+      }
+    }, 150);
+    this.register(() => window.clearTimeout(this.listRefreshTimer));
   }
 
   /**

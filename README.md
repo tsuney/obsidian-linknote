@@ -250,6 +250,12 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### 0.20.1
+
+- A card that fell inline in a narrow pane comes back to the margin when the pane is made wide again — by any means, not only a window resize.
+- A card whose pane could not be measured is retried rather than left inline for good.
+- The sidebar list redraws once per burst rather than once per cause.
+
 ### 0.20.0
 
 - **Linknotes from other people announce themselves.** One notice per burst, grouped by author — *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)* — covering what sync delivers while the vault is open and, on start-up, what came in while it was closed. Your own linknotes are never news, and nothing is announced twice. Clicking the notice opens the vault-wide list.

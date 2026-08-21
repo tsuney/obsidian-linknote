@@ -1,5 +1,11 @@
 # Changelog
 
+### 0.20.1
+
+- **A card that fell inline comes back to the margin when the pane is made wide again.** Margin or inline was decided when something remembered to ask, and a window resize was the only thing that asked — so widening the pane any other way (collapsing a sidebar, closing a split, changing the zoom or the readable line width) left the cards in the text however much room they had been given. Each pane is now watched for its own size, so the question is asked again whenever the answer could have changed.
+- **A card whose pane could not be measured no longer stays inline for good.** The measurement is retried for a handful of frames and then, if the view is still being drawn, once more a moment later — rather than silently keeping whatever placement was last decided. Once per stall, so a card that never attaches cannot ask forever.
+- The sidebar list is redrawn once per burst rather than once per cause. Reading a linknote is announced from wherever it was shown, painting a card included, and a redraw begun in the middle of a card pass renders markdown — which set the card machinery going again while it was still measuring.
+
 ### 0.20.0
 
 - **Linknotes from other people announce themselves.** A linknote someone else adds or edits — arriving over sync while the vault is open, or found on start-up among what came in while it was closed — is announced by one notice that groups the changes by author: *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)*. Sync delivers in bursts, so changes are gathered for a few seconds — half a minute right after start-up, when sync catches up on everything at once — and told once. Your own linknotes, the ones whose author matches the **Author** setting, are never news; neither is anything a previous notice already covered, so a restart does not repeat itself. Clicking the notice opens the vault-wide list. Detection sits out a vault with no Linknote folder set, where every note would count as a linknote.
