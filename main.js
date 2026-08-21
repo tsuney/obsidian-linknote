@@ -1928,12 +1928,12 @@ class LinknotePlugin extends Plugin {
       const ack = head.createEl('button', { cls: 'lkn-card-ack', text: '✓' });
       ack.setAttribute('aria-label', 'Mark this linknote read');
       ack.setAttribute('title', 'Mark this linknote read');
+      // The marks come off through clearUnreadMarks, which finds every card
+      // for this linknote — this one included.
       ack.addEventListener('click', (evt) => {
         evt.preventDefault();
         evt.stopPropagation();
         this.markLinknoteRead(file, true);
-        card.classList.remove('lkn-card-unread');
-        ack.remove();
       });
     }
 
@@ -2475,6 +2475,23 @@ class LinknotePlugin extends Plugin {
           evt.preventDefault();
           evt.stopPropagation();
           this.markLinknoteRead(entry.file, true);
+          // The sidebar redraws itself a moment later, but the sheet on
+          // mobile does not, so the row is put right where it stands: the
+          // dot gives its place to the marker, and the tick goes.
+          try {
+            const dot = head.querySelector('.lkn-unread-dot');
+            if (dot) {
+              if (entry.marker) {
+                const mark = head.createDiv({ cls: 'lkn-list-mark', text: entry.marker });
+                dot.replaceWith(mark);
+              } else {
+                dot.remove();
+              }
+            }
+            ack.remove();
+          } catch (e) {
+            /* the next redraw settles it */
+          }
         });
       }
 
@@ -3904,6 +3921,11 @@ class LinknotePlugin extends Plugin {
     if (known != null && known >= mtime) return;
     this.seenState.known[file.path] = mtime;
     this.saveSeenState(true);
+    // Every place this linknote is shown, not just the one that was pressed.
+    // The tick on a card used to clear its own card and nothing else, and the
+    // tick on a row cleared the row and nothing else — so acknowledging in
+    // one place left the same linknote still marked unread in the other.
+    this.clearUnreadMarks(file);
     // Pressing the tick is a deliberate act and has to be seen to work: the
     // count comes down in the same breath rather than on the next coalesced
     // pass, which would read as the button having missed.
@@ -3911,10 +3933,50 @@ class LinknotePlugin extends Plugin {
     this.refreshListViews();
   }
 
+  /**
+   * Takes the unread marks off the cards for a linknote that has just been
+   * read — the accent down the edge, and the tick that cleared it.
+   *
+   * Only this direction. A linknote that becomes unread again does so because
+   * someone edited it, and that already redraws the card in full, header and
+   * all. Here the card is left as it is apart from the two marks, so that
+   * acknowledging one does not re-render the note inside it.
+   */
+  clearUnreadMarks(file) {
+    // No file means every card on screen, which is what marking the whole
+    // vault read needs. Asking for each linknote in turn would walk the DOM
+    // once per note in the vault.
+    const selector = file
+      ? '.lkn-card[data-lkn-path="' + cssEscape(file.path) + '"]'
+      : '.lkn-card.lkn-card-unread';
+    for (const doc of this.openDocuments()) {
+      let cards = [];
+      try {
+        cards = Array.prototype.slice.call(doc.querySelectorAll(selector));
+      } catch (e) {
+        continue;
+      }
+      for (const card of cards) {
+        try {
+          card.classList.remove('lkn-card-unread');
+          const ack = card.querySelector('.lkn-card-ack');
+          if (ack) ack.remove();
+        } catch (e) {
+          /* the next card still gets its turn */
+        }
+      }
+    }
+  }
+
   markAllLinknotesRead() {
     if (!this.seenState) return;
     this.seenState.known = this.currentLinknoteTimes();
     this.saveSeenState();
+    // Every card on screen, for the same reason one tick clears every card
+    // of its own linknote: what was acknowledged has to look acknowledged
+    // wherever it is shown.
+    this.clearUnreadMarks();
+    this.paintRibbonBadge();
     this.refreshListViews();
   }
 

@@ -251,6 +251,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### 0.21.2
+
+- Acknowledging a linknote in the sidebar now clears its card in the note as well, in every open pane.
+
 ### 0.21.1
 
 - The sidebar list can show only what is unread: *Unread only* joins the orders, and works in either scope.

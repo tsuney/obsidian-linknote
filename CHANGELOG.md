@@ -1,5 +1,9 @@
 # Changelog
 
+### 0.21.2
+
+- **Acknowledging a linknote in one place clears it everywhere.** The tick in the sidebar marked the linknote read and brought the count down, but the card in the note went on wearing its accent and its own tick, because each tick only tidied the thing it sat on. Both now clear every card of that linknote, in every open pane — as does opening the linknote as a note, and **Mark all read**.
+
 ### 0.21.1
 
 - **The sidebar list can show only what is unread.** *Unread only* joins the orders, and narrows the list to the linknotes still waiting — in this note, or across the vault, depending on the scope. What is left is ordered newest first. It sits among the orders because that is where you look to change what the list shows, and one control is easier to find than two. When nothing is waiting the list says so, rather than looking like a search that found nothing.

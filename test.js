@@ -1198,6 +1198,52 @@ console.log('\nthe inbox — what heads a row');
   eq('unread with no marker still shows the dot', headSlot(true, ''), 'dot');
 }
 
+console.log('\nthe inbox — a tick anywhere clears the marks everywhere');
+{
+  // Acknowledging in the sidebar used to clear the row and leave the card in
+  // the note still wearing its accent and its tick, because each tick only
+  // tidied itself. Both now go through clearUnreadMarks.
+  const cardFor = (path, unread) => {
+    const classes = new Set(['lkn-card']);
+    if (unread) classes.add('lkn-card-unread');
+    const ack = unread ? { removed: false, remove() { this.removed = true; } } : null;
+    return {
+      path,
+      ack,
+      _c: classes,
+      classList: { remove: (c) => classes.delete(c), contains: (c) => classes.has(c) },
+      querySelector: (sel) => (sel === '.lkn-card-ack' ? ack : null),
+    };
+  };
+
+  const mine = cardFor('L/a.md', true);
+  const alsoMine = cardFor('L/a.md', true); // the same linknote in a second pane
+  const theirs = cardFor('L/b.md', true);
+  const cards = [mine, alsoMine, theirs];
+
+  const plugin = {
+    openDocuments: () => [
+      {
+        querySelectorAll: (sel) =>
+          sel === '.lkn-card.lkn-card-unread'
+            ? cards.filter((c) => c._c.has('lkn-card-unread'))
+            : cards.filter((c) => sel.indexOf('"' + c.path + '"') !== -1),
+      },
+    ],
+  };
+
+  m.prototype.clearUnreadMarks.call(plugin, { path: 'L/a.md' });
+  check('the card that was pressed is cleared', !mine._c.has('lkn-card-unread'));
+  check('and its tick is gone', mine.ack.removed);
+  check('the same linknote in another pane is cleared too', !alsoMine._c.has('lkn-card-unread'));
+  check('a different linknote is left alone', theirs._c.has('lkn-card-unread'));
+  check('and keeps its tick', !theirs.ack.removed);
+
+  m.prototype.clearUnreadMarks.call(plugin);
+  check('marking everything read clears what is left', !theirs._c.has('lkn-card-unread'));
+  check('including its tick', theirs.ack.removed);
+}
+
 console.log('\nthe inbox — showing only what is unread');
 {
   const { unreadOnly, sortRows } = m;
