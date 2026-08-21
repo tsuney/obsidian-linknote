@@ -1,5 +1,13 @@
 # Changelog
 
+### 0.20.0
+
+- **Linknotes from other people announce themselves.** A linknote someone else adds or edits — arriving over sync while the vault is open, or found on start-up among what came in while it was closed — is announced by one notice that groups the changes by author: *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)*. Sync delivers in bursts, so changes are gathered for a few seconds — half a minute right after start-up, when sync catches up on everything at once — and told once. Your own linknotes, the ones whose author matches the **Author** setting, are never news; neither is anything a previous notice already covered, so a restart does not repeat itself. Clicking the notice opens the vault-wide list. Detection sits out a vault with no Linknote folder set, where every note would count as a linknote.
+- **The sidebar list has a scope: this note, or the whole vault.** The vault-wide list is the inbox for a shared vault — every linknote anyone has written, recently changed first by default (the in-the-note order means nothing across a vault), with the search box and the other orders working as before, and a **Mark all read** button. Rows this device has not shown yet wear a dot in the theme's accent colour; the dot also says so in words, for anyone the colour alone would not tell.
+- **Read marks are per device and stay out of the vault.** What has been shown here is remembered in the app's local storage, keyed by vault — not in `data.json`, which sync can carry to another device, where your reading would mark theirs; and not in any note, which would sync one person's reading to everyone. A linknote counts as read once its body has been on screen: opened as a note, painted as a card, listed in the this-note sidebar or the sheet, or opened from the vault-wide list, which lists without reading — it is the inbox, and an inbox that reads its own mail defeats the dot and the button both. Edited again later, a read linknote comes back as unread. The first run starts with everything read: announcing months of history as news would be worse than missing a beat.
+- A renamed linknote is the same note under a new path, not news; a deleted one is forgotten, not announced.
+- New setting: **Notify when linknotes change** (on). It quiets the notices; the unread dots stay either way.
+
 ### 0.19.2
 
 - The diagnostic line 0.19.1 wrote to the developer console when a passage could not be found is gone; it was there to find the cause and the cause is fixed. No other change.

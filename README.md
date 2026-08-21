@@ -134,6 +134,8 @@ Above the rows are a search box and an order. Typing narrows the list: every wor
 
 The cards answer "what is written here". The list answers "what has been written about this note, and where". On mobile it is the main answer, since a card has nowhere to go there.
 
+The list has a scope: **This note**, or **Whole vault**. The vault-wide list is the inbox for a shared vault — every linknote anyone has written, ordered recently-changed first by default, with a dot on every row this device has not shown yet and a **Mark all read** button. Rows in this-note scope are marked read as they are listed; the vault-wide list marks a row read only when you open it.
+
 ### Cards
 
 Turn on **Show linknotes as cards** and each linknote is drawn beside the passage it annotates, headed by the marker it was written with, then who wrote it and when, then the words it is about on one line. Anchors are per block, so two linknotes on one paragraph are told apart by that line and nothing else; the whole passage is on hover. That line opens the full note; hovering it shows the file name. The marker is read from the link in your note rather than from a property, so it is the character actually used — which on a second device set to a different one tells you at a glance where the note came from.
@@ -173,6 +175,8 @@ A vault shared between people — Obsidian Sync, which is paid, or any file-sync
 
 Set **Author** on each device, and give each person a different **Marker character**. Cards and sidebar rows are then headed by the marker, the author and the date, so who wrote what is clear at a glance. Everyone should use the same **Linknote folder**: that is how a marker written with someone else's character is recognized here. On a call, share the screen in Reading view and write the linknote as the point comes up.
 
+Other people's linknotes announce themselves. As they arrive over sync — and on start-up, for whatever came in while the vault was closed — one notice sums them up by author: *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)*. Clicking the notice opens the vault-wide sidebar list, where unread rows carry a dot. Linknotes whose author matches your own **Author** setting are never announced, and read marks are kept per device, in the app's local storage — they are this device's memory of what it has shown you, and never travel over sync. The notice can be turned off in settings; the dots stay either way.
+
 Linknote does nothing about conflicts. Two people editing one source note at the same time is left to your sync tool, and two linknotes written offline on the same block can end up wanting the same name. **Author** is a setting, not an identity, and it is empty by default — a row then shows the date alone. Cards are desktop Reading view only, so on a shared screen only the presenter sees them; everyone else sees the linknote when their vault next syncs.
 
 ## Settings
@@ -203,6 +207,7 @@ Linknote does nothing about conflicts. Two people editing one source note at the
 | Keep the body property in step with the note | on | the note wins; an edit made to the property is overwritten |
 | Show the Linknote button when text is selected | on | turn off for hotkey-only use |
 | Open the linknote after creating it | off | opens in a split, once the block reference resolves |
+| Notify when linknotes change | on | one notice per burst of other people's additions and edits; unread dots stay either way |
 
 ## How the anchoring works
 
@@ -244,6 +249,12 @@ node test/integration.js  # note creation end to end, against a fake vault
 ## Changelog
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
+
+### 0.20.0
+
+- **Linknotes from other people announce themselves.** One notice per burst, grouped by author — *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)* — covering what sync delivers while the vault is open and, on start-up, what came in while it was closed. Your own linknotes are never news, and nothing is announced twice. Clicking the notice opens the vault-wide list.
+- **The sidebar list has a scope: this note, or the whole vault.** The vault-wide list is the inbox: recently changed first, unread rows dotted, with a **Mark all read** button. Read marks are kept per device, in the app's local storage, and never travel over sync.
+- New setting: **Notify when linknotes change** (on). It quiets the notices; the dots stay.
 
 ### 0.19.2
 

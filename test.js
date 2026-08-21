@@ -997,5 +997,92 @@ console.log('\na foreign marker alone in its block still reaches the heading');
   eq('the heading move is asked for with the text found, not the setting', seen, '📱');
 }
 
+console.log('\nupdate notices — who a linknote belongs to');
+{
+  const { authorOf, isOwnAuthor } = m;
+  eq('a plain string author', authorOf({ author: 'Yamada' }), 'Yamada');
+  eq('a YAML list author', authorOf({ author: ['Yamada'] }), 'Yamada');
+  eq('a list with several names', authorOf({ author: ['Yamada', 'Sato'] }), 'Yamada, Sato');
+  eq('surrounding whitespace is dropped', authorOf({ author: '  Yamada ' }), 'Yamada');
+  eq('no frontmatter names nobody', authorOf(null), '');
+  eq('no author property names nobody', authorOf({}), '');
+  eq('a numeric author is still a name', authorOf({ author: 42 }), '42');
+
+  check('the same name is own', isOwnAuthor('Yamada', 'Yamada'));
+  check('a different name is not', !isOwnAuthor('Yamada', 'Sato'));
+  check('with no Author set, nothing is own', !isOwnAuthor('Yamada', ''));
+  check('a nameless linknote is not claimed as own', !isOwnAuthor('', 'Yamada'));
+  check('whitespace does not defeat the match', isOwnAuthor(' Yamada ', 'Yamada'));
+}
+
+console.log('\nupdate notices — what changed since this device looked');
+{
+  const { diffKnown } = m;
+  const known = { 'L/a.md': 100, 'L/b.md': 200, 'L/gone.md': 50 };
+
+  const same = diffKnown(known, { 'L/a.md': 100, 'L/b.md': 200 });
+  eq('nothing new when nothing moved', same.added.length + same.edited.length, 0);
+
+  const one = diffKnown(known, { 'L/a.md': 100, 'L/b.md': 300, 'L/c.md': 400 });
+  eq('a path not yet known is new', one.added.join(','), 'L/c.md');
+  eq('a later mtime is an edit', one.edited.join(','), 'L/b.md');
+
+  const back = diffKnown(known, { 'L/a.md': 90 });
+  eq('an earlier mtime is not an edit', back.edited.length, 0);
+  check('what disappeared is not reported', !JSON.stringify(one).includes('gone'));
+
+  const fresh = diffKnown({}, { 'L/a.md': 1 });
+  eq('an empty memory makes everything new', fresh.added.length, 1);
+}
+
+console.log('\nupdate notices — the sentence a notice says');
+{
+  const { noticeText } = m;
+  eq('one new linknote', noticeText([{ author: 'Yamada', kind: 'new' }]), '1 linknote updated (Yamada: 1 new)');
+  eq('one edited linknote', noticeText([{ author: 'Yamada', kind: 'edited' }]), '1 linknote updated (Yamada: 1 edited)');
+  eq(
+    'several changes group by author, in the order first seen',
+    noticeText([
+      { author: 'Yamada', kind: 'new' },
+      { author: 'Sato', kind: 'edited' },
+      { author: 'Yamada', kind: 'new' },
+    ]),
+    '3 linknotes updated (Yamada: 2 new · Sato: 1 edited)'
+  );
+  eq(
+    'new and edited from one author sit together',
+    noticeText([
+      { author: 'Yamada', kind: 'new' },
+      { author: 'Yamada', kind: 'edited' },
+    ]),
+    '2 linknotes updated (Yamada: 1 new, 1 edited)'
+  );
+  eq(
+    'a linknote that names nobody is still counted',
+    noticeText([{ author: '', kind: 'new' }]),
+    '1 linknote updated ((no author): 1 new)'
+  );
+  eq('no changes, no sentence', noticeText([]), '');
+}
+
+console.log('\nupdate notices — the read state is checked before use');
+{
+  const { sanitizeSeenState } = m;
+  eq('nothing stored means start over', sanitizeSeenState(null), null);
+  eq('a bare string means start over', sanitizeSeenState('known'), null);
+  eq('a state without known means start over', sanitizeSeenState({ told: {} }), null);
+
+  const kept = sanitizeSeenState({ known: { 'L/a.md': 100 }, told: { 'L/a.md': 90 } });
+  eq('a sound state keeps its marks', kept.known['L/a.md'], 100);
+  eq('and what it was told', kept.told['L/a.md'], 90);
+
+  const mixed = sanitizeSeenState({
+    known: { 'L/a.md': 100, 'L/b.md': 'soon', 'L/c.md': -5, 'L/d.md': null },
+    told: 'everything',
+  });
+  eq('a mark that is not a time is dropped', Object.keys(mixed.known).join(','), 'L/a.md');
+  eq('a told that is not a map is an empty one', Object.keys(mixed.told).length, 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

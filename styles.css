@@ -191,9 +191,53 @@ body.is-mobile .lkn-modal-mobile .lkn-buttons {
   max-width: 45%;
 }
 
+.lkn-list .lkn-list-scope {
+  flex: 0 0 auto;
+  font-size: var(--font-ui-smaller);
+  max-width: 40%;
+}
+
+.lkn-list .lkn-list-markall {
+  flex: 0 0 auto;
+  font-size: var(--font-ui-smaller);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.lkn-list .lkn-list-markall.lkn-hidden {
+  display: none;
+}
+
 .lkn-list .lkn-list-rows {
   /* The rows keep the padding the list had before the tools were added. */
   padding-top: 4px;
+}
+
+/* Changed since this device last showed it. The accent colour, so the dot
+ * reads as "news" in any theme; the colour never carries the only meaning —
+ * the title attribute says the same in words. */
+.lkn-list .lkn-unread-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--interactive-accent);
+  align-self: center;
+}
+
+/* A passage with no source note to jump to: shown, but not an invitation.
+ * Doubled class, so these outweigh the clickable passage rules below. */
+.lkn-list .lkn-list-passage.lkn-list-passage-still {
+  cursor: default;
+}
+
+.lkn-list .lkn-list-passage.lkn-list-passage-still:hover {
+  color: inherit;
+}
+
+/* The whole notice is the doorway to the list. */
+.lkn-notice {
+  cursor: pointer;
 }
 
 /* Linknote — settings */
