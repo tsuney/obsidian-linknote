@@ -208,6 +208,7 @@ Linknote does nothing about conflicts. Two people editing one source note at the
 | Show the Linknote button when text is selected | on | turn off for hotkey-only use |
 | Open the linknote after creating it | off | opens in a split, once the block reference resolves |
 | Notify when linknotes change | on | one notice per burst of other people's additions and edits; unread dots stay either way |
+| Count a linknote as read | When you say so | the tick on a card or row, or opening the linknote; *When it is shown* clears it as a card or row draws it |
 
 ## How the anchoring works
 
@@ -249,6 +250,12 @@ node test/integration.js  # note creation end to end, against a fake vault
 ## Changelog
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
+
+### 0.21.0
+
+- A linknote counts as read when you say so — the tick on its card or row, or opening it as a note — rather than merely by being drawn on screen. The old behaviour is a setting.
+- An unread card carries the accent colour and a tick to clear it.
+- The ribbon badge is larger, the icon takes the accent while anything is waiting, and on desktop the count also sits in the status bar.
 
 ### 0.20.2
 

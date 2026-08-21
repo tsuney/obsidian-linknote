@@ -270,22 +270,40 @@ body.is-mobile .lkn-modal-mobile .lkn-buttons {
   position: relative;
 }
 
+/* The icon itself carries the accent while anything is waiting, so the state
+ * is legible even at a glance that misses the number. */
+.side-dock-ribbon-action.lkn-has-unread .svg-icon {
+  color: var(--interactive-accent);
+}
+
 .side-dock-ribbon-action.lkn-has-unread::after {
   content: attr(data-lkn-unread);
   position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
+  top: 0;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
   background-color: var(--interactive-accent);
   color: var(--text-on-accent);
-  font-size: 9px;
-  line-height: 14px;
+  font-size: 11px;
+  line-height: 18px;
   font-weight: var(--font-bold);
   text-align: center;
   pointer-events: none;
+  /* Lifted off the icon so the digits stay readable against it. */
+  box-shadow: 0 0 0 2px var(--background-secondary);
+}
+
+/* The count along the bottom of the window. */
+.status-bar-item.lkn-status {
+  color: var(--text-muted);
+}
+
+.status-bar-item.lkn-status.lkn-status-unread {
+  color: var(--interactive-accent);
+  font-weight: var(--font-bold);
 }
 
 /* Linknote — settings */
@@ -697,6 +715,7 @@ body.is-mobile .markdown-rendered li.lkn-anchored::before {
 }
 
 /* The buttons that stow every card away, and remove this one. */
+.lkn-card .lkn-card-ack,
 .lkn-card .lkn-card-stow,
 .lkn-card .lkn-card-remove {
   flex: 0 0 auto;
@@ -932,4 +951,44 @@ body.is-mobile .lkn-sheet {
 ::highlight(linknote-passage) {
   background-color: hsla(var(--accent-h, 254), var(--accent-s, 80%), var(--accent-l, 68%), 0.4);
   color: var(--text-normal);
+}
+
+/*
+ * Unread, and the tick that says otherwise.
+ *
+ * A linknote stops being unread when someone says it has been read — the tick
+ * here, the same tick on a sidebar row, or opening the linknote as a note.
+ * Being drawn on screen is not that: a card scrolls past whether or not it was
+ * taken in, and a count cleared by scrolling counts nothing.
+ */
+.lkn-card.lkn-card-unread {
+  border-color: var(--interactive-accent);
+  box-shadow: inset 3px 0 0 0 var(--interactive-accent);
+}
+
+.lkn-card .lkn-card-ack {
+  color: var(--interactive-accent);
+  font-weight: var(--font-bold);
+}
+
+.lkn-card .lkn-card-ack:hover {
+  color: var(--text-on-accent);
+  background-color: var(--interactive-accent);
+}
+
+.lkn-list .lkn-list-ack {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  height: auto;
+  line-height: 1.2;
+  box-shadow: none;
+  background: transparent;
+  color: var(--interactive-accent);
+  font-weight: var(--font-bold);
+  cursor: pointer;
+}
+
+.lkn-list .lkn-list-ack:hover {
+  color: var(--text-on-accent);
+  background-color: var(--interactive-accent);
 }

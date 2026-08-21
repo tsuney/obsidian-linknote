@@ -1,5 +1,12 @@
 # Changelog
 
+### 0.21.0
+
+- **A linknote is read when you say it has been read.** Until now a card drawing itself on screen was enough, which counted a linknote as taken in whether or not anyone had looked at it — and a count that clears itself by scrolling counts nothing. An unread linknote now stays unread until its card's tick is pressed, until the tick on its sidebar row is pressed, or until the linknote itself is opened as a note. The old behaviour is still available: **Count a linknote as read → When it is shown**.
+- **An unread card is marked as unread.** It carries the accent colour down its edge and a tick in its header; both go the moment it is read, and the ribbon count comes down in the same breath rather than on the next pass.
+- **The unread count is harder to miss.** The badge on the ribbon is larger and stands clear of the icon, the icon itself takes the accent colour while anything is waiting, and on desktop the count also sits along the bottom of the window — where nothing overlaps it and it does not depend on which pane is in front. Clicking either opens the inbox.
+- New setting: **Count a linknote as read** (*When you say so* / *When it is shown*).
+
 ### 0.20.2
 
 - **The ribbon icon carries the unread count.** A notice is gone in seconds and only reaches whoever happened to be looking; the count stays until the linknotes behind it have been read. Clicking it opens the inbox when something is waiting. Notices now stand for twenty seconds rather than eight, and say that clicking opens the inbox.

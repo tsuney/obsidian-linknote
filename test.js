@@ -1198,6 +1198,16 @@ console.log('\nthe inbox — what heads a row');
   eq('unread with no marker still shows the dot', headSlot(true, ''), 'dot');
 }
 
+console.log('\nthe inbox — when a linknote counts as read');
+{
+  const { readsOnShowing } = m;
+  check('by default, showing a card decides nothing', !readsOnShowing({ readOn: 'open' }));
+  check('an unset preference is the careful one', !readsOnShowing({}));
+  check('a nonsense value is the careful one too', !readsOnShowing({ readOn: 'yes please' }));
+  check('only "shown" clears a linknote by drawing it', readsOnShowing({ readOn: 'shown' }));
+  check('no settings at all decides nothing', !readsOnShowing(null));
+}
+
 console.log('\nthe inbox — the count on the ribbon');
 {
   const { badgeText } = m;

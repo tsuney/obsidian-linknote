@@ -174,6 +174,7 @@ const DEFAULT_SETTINGS = {
   cardTextColourCustom: '',
   notifyOthers: true,
   listScope: 'note',
+  readOn: 'open',
 };
 
 /*
@@ -1328,6 +1329,14 @@ class LinknotePlugin extends Plugin {
       this.openList(this.unreadCount() ? 'vault' : undefined)
     );
 
+    // And along the bottom, where nothing overlaps it and it is on screen
+    // whatever pane is in front. Not on mobile: there is no status bar there.
+    if (!Platform.isMobile) {
+      this.statusEl = this.addStatusBarItem();
+      this.statusEl.addClass('mod-clickable', 'lkn-status');
+      this.statusEl.addEventListener('click', () => this.openList('vault'));
+    }
+
     this.addCommand({
       id: 'open-list',
       name: 'Show the linknotes in this note',
@@ -1889,8 +1898,10 @@ class LinknotePlugin extends Plugin {
     // bailing here is what left the card an empty box. Losing its host is the
     // real signal that the card is gone.
     if (this.unloaded || !card.parentElement) return;
-    // A card on screen is the linknote read, as far as this device goes.
-    this.markLinknoteRead(file);
+    // Seeing a card go past is not the same as having taken it in, so by
+    // default a card does not mark anything read. Reading is something you
+    // say you have done: open the linknote, or press the tick on the card.
+    if (readsOnShowing(this.settings)) this.markLinknoteRead(file);
     this.dropCardChild(card);
     card.empty();
 
@@ -1907,6 +1918,24 @@ class LinknotePlugin extends Plugin {
       evt.preventDefault();
       this.app.workspace.openLinkText(file.path, sourcePath, evt.metaKey || evt.ctrlKey);
     });
+
+    // Unread until it is said to be read. The card wears the accent while it
+    // is, and carries the tick that says so; both go the moment it is read,
+    // and the count on the ribbon comes down with them.
+    const unread = this.isUnread(file);
+    card.classList.toggle('lkn-card-unread', unread);
+    if (unread) {
+      const ack = head.createEl('button', { cls: 'lkn-card-ack', text: '✓' });
+      ack.setAttribute('aria-label', 'Mark this linknote read');
+      ack.setAttribute('title', 'Mark this linknote read');
+      ack.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        this.markLinknoteRead(file, true);
+        card.classList.remove('lkn-card-unread');
+        ack.remove();
+      });
+    }
 
     const stow = head.createEl('button', { cls: 'lkn-card-stow', text: '–' });
     stow.setAttribute('aria-label', 'Stow the cards');
@@ -2435,6 +2464,20 @@ class LinknotePlugin extends Plugin {
       }
       head.createDiv({ cls: 'lkn-list-meta', text: meta || entry.file.basename });
 
+      // The same tick a card carries, so a row can be acknowledged without
+      // opening it. Only while it is unread: a button that does nothing is
+      // worse than no button.
+      if (unread && typeof this.markLinknoteRead === 'function') {
+        const ack = head.createEl('button', { cls: 'lkn-list-ack', text: '✓' });
+        ack.setAttribute('aria-label', 'Mark this linknote read');
+        ack.setAttribute('title', 'Mark this linknote read');
+        ack.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          this.markLinknoteRead(entry.file, true);
+        });
+      }
+
       if (src) {
         const drop = head.createEl('button', { cls: 'lkn-list-remove', text: '×' });
         drop.setAttribute('aria-label', 'Remove this linknote');
@@ -2504,7 +2547,11 @@ class LinknotePlugin extends Plugin {
     // A row shows the whole linknote, so showing it is reading it — but only
     // after the rows are in place: marking read redraws the sidebar, and a
     // redraw racing the render it belongs to is how rows once doubled.
-    if (options.markRead && typeof this.markLinknoteRead === 'function') {
+    if (
+      options.markRead &&
+      readsOnShowing(this.settings) &&
+      typeof this.markLinknoteRead === 'function'
+    ) {
       for (const entry of entries) this.markLinknoteRead(entry.file);
     }
   }
@@ -3850,13 +3897,17 @@ class LinknotePlugin extends Plugin {
    * A linknote whose body has been on screen is read. Reading marks are by
    * mtime, so a linknote edited again after being read comes back as unread.
    */
-  markLinknoteRead(file) {
+  markLinknoteRead(file, now) {
     if (!this.seenState || !file || !file.path || !this.isLinknote(file)) return;
     const mtime = (file.stat && file.stat.mtime) || 0;
     const known = this.seenState.known[file.path];
     if (known != null && known >= mtime) return;
     this.seenState.known[file.path] = mtime;
     this.saveSeenState(true);
+    // Pressing the tick is a deliberate act and has to be seen to work: the
+    // count comes down in the same breath rather than on the next coalesced
+    // pass, which would read as the button having missed.
+    if (now) this.paintRibbonBadge();
     this.refreshListViews();
   }
 
@@ -3865,6 +3916,25 @@ class LinknotePlugin extends Plugin {
     this.seenState.known = this.currentLinknoteTimes();
     this.saveSeenState();
     this.refreshListViews();
+  }
+
+  /**
+   * The same count along the bottom of the window. The status bar is not
+   * covered by anything and does not depend on which pane is in front, so it
+   * is where a count is still there to be found an hour later. Empty at zero:
+   * a line saying nothing is waiting is a line earning nothing.
+   */
+  paintStatusBar(count) {
+    const el = this.statusEl;
+    if (!el) return;
+    try {
+      const n = Number(count) || 0;
+      el.setText(n > 0 ? '● ' + badgeText(n) + ' unread linknote' + (n === 1 ? '' : 's') : '');
+      el.toggleClass('lkn-status-unread', n > 0);
+      el.setAttribute('aria-label', n > 0 ? 'Open the linknote inbox' : '');
+    } catch (e) {
+      /* the ribbon count remains */
+    }
   }
 
   /** How many linknotes are waiting to be read on this device. */
@@ -3888,9 +3958,10 @@ class LinknotePlugin extends Plugin {
    * when the plugin is disabled.
    */
   paintRibbonBadge() {
+    const n = this.unreadCount();
+    this.paintStatusBar(n);
     const el = this.ribbonEl;
     if (!el) return;
-    const n = this.unreadCount();
     try {
       const badge = badgeText(n);
       if (badge) {
@@ -4184,6 +4255,17 @@ function noticeText(changes) {
 function headSlot(unread, marker) {
   if (unread) return 'dot';
   return String(marker || '').trim() ? 'marker' : 'none';
+}
+
+/**
+ * Whether drawing a linknote on screen is enough to call it read.
+ *
+ * Only when it has been asked for by name. Anything else — unset, a value
+ * from an older or hand-edited data.json, nonsense — means the deliberate
+ * reading, because a count that clears itself by scrolling counts nothing.
+ */
+function readsOnShowing(settings) {
+  return !!settings && settings.readOn === 'shown';
 }
 
 /** The unread count as it is drawn on the ribbon; nothing at all when zero. */
@@ -5378,6 +5460,26 @@ class LinknoteSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Count a linknote as read')
+      .setDesc(
+        'When another person’s linknote stops counting as unread. "When you say so" waits for the ' +
+          'tick on the card or the row, or for the linknote to be opened as a note — seeing a card go ' +
+          'past is not the same as having taken it in. "When it is shown" clears it as soon as a card ' +
+          'or a this-note row draws it.'
+      )
+      .addDropdown((d) => {
+        d.addOption('open', 'When you say so');
+        d.addOption('shown', 'When it is shown');
+        d.setValue(s.readOn === 'shown' ? 'shown' : 'open');
+        d.onChange(async (v) => {
+          s.readOn = v === 'shown' ? 'shown' : 'open';
+          await this.plugin.saveSettings();
+          this.plugin.refreshListViews();
+          this.plugin.settleCards();
+        });
+      });
+
+    new Setting(containerEl)
       .setName('Notify when linknotes change')
       .setDesc(
         'One notice sums up linknotes that other people add or edit — as they arrive over sync, ' +
@@ -5436,6 +5538,7 @@ module.exports.noticeText = noticeText;
 module.exports.sanitizeSeenState = sanitizeSeenState;
 module.exports.headSlot = headSlot;
 module.exports.badgeText = badgeText;
+module.exports.readsOnShowing = readsOnShowing;
 module.exports.rowMatches = rowMatches;
 module.exports.sortRows = sortRows;
 module.exports.safeFolder = safeFolder;
