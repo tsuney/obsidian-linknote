@@ -205,6 +205,10 @@ const HIGHLIGHT_LOOKBACK = 3;
  */
 const NOTICE_GATHER_MS = 5000;
 const STARTUP_QUIET_MS = 30000;
+// How long a notice stays. Long enough to be caught by someone who looks up
+// from another window, short enough not to sit over the text. What is missed
+// anyway is kept by the ribbon count, which does not time out.
+const NOTICE_SHOWN_MS = 20000;
 // How long after this device writes a linknote file its own create and modify
 // events are ignored. Well past any burst of events one write can raise.
 const SELF_WRITE_MS = 10000;
@@ -1316,7 +1320,13 @@ class LinknotePlugin extends Plugin {
     );
 
     this.registerView(LIST_VIEW_TYPE, (leaf) => new LinknoteListView(leaf, this));
-    this.addRibbonIcon('message-square', 'Linknotes in this note', () => this.openList());
+    // The ribbon is where an unread count belongs: a notice is gone in
+    // seconds and only reaches whoever was looking, whereas this stays until
+    // the linknotes behind it have been read. It opens the whole-vault list,
+    // which is what a count is a count of.
+    this.ribbonEl = this.addRibbonIcon('message-square', 'Linknotes', () =>
+      this.openList(this.unreadCount() ? 'vault' : undefined)
+    );
 
     this.addCommand({
       id: 'open-list',
@@ -1404,6 +1414,14 @@ class LinknotePlugin extends Plugin {
    */
   removeAllTraces() {
     this.clearPassage();
+    try {
+      if (this.ribbonEl) {
+        this.ribbonEl.classList.remove('lkn-has-unread');
+        this.ribbonEl.removeAttribute('data-lkn-unread');
+      }
+    } catch (e) {
+      /* the button has gone with the ribbon */
+    }
     const gone = [
       'lkn-cards',
       'lkn-anchored',
@@ -2398,16 +2416,22 @@ class LinknotePlugin extends Plugin {
       const info = await this.readLinknote(entry.file);
       const meta = [info.author, info.created].filter(Boolean).join(' · ');
       const head = row.createDiv({ cls: 'lkn-list-head' });
-      // The marker first, then who and when, so a row reads the same way as a
-      // card and two authors are told apart at a glance.
-      if (entry.marker) head.createDiv({ cls: 'lkn-list-mark', text: entry.marker });
-      // The dot says "changed since this device last showed it". It is drawn
-      // from the state before this render, so a list just opened still shows
-      // which rows are the news, even where the render itself marks them read.
-      if (typeof this.isUnread === 'function' && this.isUnread(entry.file)) {
+      /*
+       * One slot at the head of the row, before who and when. Unread, it
+       * holds the dot; read, it holds the marker the linknote was written
+       * with — so the row is headed the way a card is, and the character
+       * says whose it is once the dot has gone. The two never both appear:
+       * a dot beside a marker reads as two separate claims about one row,
+       * and the dot is the one that matters while it is there.
+       */
+      const unread = typeof this.isUnread === 'function' && this.isUnread(entry.file);
+      const slot = headSlot(unread, entry.marker);
+      if (slot === 'dot') {
         const dot = head.createDiv({ cls: 'lkn-unread-dot' });
         dot.setAttribute('aria-label', 'Unread');
         dot.setAttribute('title', 'Unread');
+      } else if (slot === 'marker') {
+        head.createDiv({ cls: 'lkn-list-mark', text: entry.marker });
       }
       head.createDiv({ cls: 'lkn-list-meta', text: meta || entry.file.basename });
 
@@ -3609,6 +3633,16 @@ class LinknotePlugin extends Plugin {
     }
   }
 
+  /** Is this file the one being looked at on this device right now? */
+  isInFront(file) {
+    try {
+      const active = this.app.workspace.getActiveFile();
+      return !!active && !!file && active.path === file.path;
+    } catch (e) {
+      return false;
+    }
+  }
+
   seenStateKey() {
     return 'linknote/' + this.app.vault.getName() + '/state';
   }
@@ -3695,7 +3729,14 @@ class LinknotePlugin extends Plugin {
     if (this.unloaded || !(file instanceof TFile) || file.extension !== 'md') return;
     if (!String(this.settings.folder || '').trim() || !this.isLinknote(file)) return;
     const wrote = this.recentWrites.get(file.path);
-    if (wrote && Date.now() - wrote < SELF_WRITE_MS) {
+    // A linknote open in front of you on this device is one you are reading
+    // or editing yourself. Typing into someone else's linknote goes through
+    // Obsidian's own save, not this plugin's writes, so without this the
+    // device announced your own edit back to you — under the other person's
+    // name, since the name shown is the author of the note, not whoever last
+    // touched it. A change arriving over sync for the note on screen is
+    // missed this way, but it is the one change already in plain sight.
+    if ((wrote && Date.now() - wrote < SELF_WRITE_MS) || this.isInFront(file)) {
       // This device's own write. It is already read here, whatever the
       // author says — the body property, for one, is written into other
       // people's linknotes.
@@ -3794,10 +3835,14 @@ class LinknotePlugin extends Plugin {
       line.className = 'lkn-notice';
       line.textContent = text;
       line.addEventListener('click', () => this.openList('vault'));
+      const hint = document.createElement('div');
+      hint.className = 'lkn-notice-hint';
+      hint.textContent = 'Click to open the inbox';
       frag.appendChild(line);
-      new Notice(frag, 8000);
+      frag.appendChild(hint);
+      new Notice(frag, NOTICE_SHOWN_MS);
     } catch (e) {
-      new Notice(text, 8000);
+      new Notice(text, NOTICE_SHOWN_MS);
     }
   }
 
@@ -3820,6 +3865,46 @@ class LinknotePlugin extends Plugin {
     this.seenState.known = this.currentLinknoteTimes();
     this.saveSeenState();
     this.refreshListViews();
+  }
+
+  /** How many linknotes are waiting to be read on this device. */
+  unreadCount() {
+    if (!this.seenState || !String(this.settings.folder || '').trim()) return 0;
+    let n = 0;
+    try {
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        if (this.isLinknote(file) && this.isUnread(file)) n += 1;
+      }
+    } catch (e) {
+      return n;
+    }
+    return n;
+  }
+
+  /**
+   * Puts the count on the ribbon icon, or takes it off at zero. Written as an
+   * attribute the stylesheet draws from, so nothing is added to Obsidian's own
+   * button beyond a class it can be styled by — and taken off again cleanly
+   * when the plugin is disabled.
+   */
+  paintRibbonBadge() {
+    const el = this.ribbonEl;
+    if (!el) return;
+    const n = this.unreadCount();
+    try {
+      const badge = badgeText(n);
+      if (badge) {
+        el.classList.add('lkn-has-unread');
+        el.setAttribute('data-lkn-unread', badge);
+        el.setAttribute('aria-label', n === 1 ? 'Linknotes — 1 unread' : 'Linknotes — ' + n + ' unread');
+      } else {
+        el.classList.remove('lkn-has-unread');
+        el.removeAttribute('data-lkn-unread');
+        el.setAttribute('aria-label', 'Linknotes');
+      }
+    } catch (e) {
+      /* the list and the notices remain */
+    }
   }
 
   /**
@@ -3854,6 +3939,9 @@ class LinknotePlugin extends Plugin {
     this.listRefreshTimer = window.setTimeout(() => {
       this.listRefreshTimer = null;
       if (this.unloaded) return;
+      // The badge answers the same question the rows do, so it is repainted
+      // with them and cannot drift out of step.
+      this.paintRibbonBadge();
       for (const leaf of this.app.workspace.getLeavesOfType(LIST_VIEW_TYPE)) {
         const view = leaf.view;
         if (view && typeof view.draw === 'function') view.draw();
@@ -3871,12 +3959,57 @@ class LinknotePlugin extends Plugin {
   allLinknoteEntries() {
     const out = [];
     if (!String(this.settings.folder || '').trim()) return out;
+    // The markers of one source note are found in one pass over its links,
+    // and a note usually carries several linknotes, so the answers are kept
+    // for the length of this build.
+    const markers = new Map();
     for (const file of this.app.vault.getMarkdownFiles()) {
       if (!this.isLinknote(file)) continue;
       const { source, blockId } = this.sourceOfLinknote(file);
-      out.push({ file, line: 0, blockId, passage: '', marker: '', source });
+      out.push({
+        file,
+        line: 0,
+        blockId,
+        passage: '',
+        marker: this.markerFor(file, source, markers),
+        source,
+      });
     }
     return out;
+  }
+
+  /**
+   * The character a linknote was written with, read from the marker left in
+   * its source note — the same place a card and a this-note row read it, so
+   * one linknote shows the same character wherever it appears.
+   *
+   * Not from a property: the shipped template does not record one, and this
+   * has to work for every linknote already written. The link caches are in
+   * memory, so no file is opened to answer it.
+   */
+  markerFor(file, source, cache) {
+    if (!source) return '';
+    try {
+      let byPath = cache && cache.get(source.path);
+      if (!byPath) {
+        byPath = new Map();
+        const links = (this.app.metadataCache.getFileCache(source) || {}).links || [];
+        for (const link of links) {
+          const marker = markerOfLink(link);
+          if (!marker) continue;
+          const target = String((link && link.link) || '').split('#')[0];
+          if (!target) continue;
+          const dest = this.app.metadataCache.getFirstLinkpathDest(target, source.path);
+          // The first marker wins: a note may mention a linknote twice, and
+          // the marker is the one that anchors it.
+          if (dest && !byPath.has(dest.path)) byPath.set(dest.path, marker);
+        }
+        if (cache) cache.set(source.path, byPath);
+      }
+      return byPath.get(file.path) || '';
+    } catch (e) {
+      return '';
+    }
   }
 
   /** The source note a linknote's own source property points at, if any. */
@@ -4040,6 +4173,27 @@ function noticeText(changes) {
 }
 
 /**
+ * What goes at the head of a row: the unread dot, or the marker the linknote
+ * was written with, or nothing.
+ *
+ * One slot, never both. Unread, the dot is the thing to say; once it has gone
+ * the character takes its place and says whose linknote this is, the way a
+ * card is headed. A dot beside a marker read as two separate claims about one
+ * row, and the marker is not the news.
+ */
+function headSlot(unread, marker) {
+  if (unread) return 'dot';
+  return String(marker || '').trim() ? 'marker' : 'none';
+}
+
+/** The unread count as it is drawn on the ribbon; nothing at all when zero. */
+function badgeText(count) {
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return n > 99 ? '99+' : String(Math.floor(n));
+}
+
+/**
  * The read state as it came out of localStorage, checked before use — the
  * same wariness data.json gets, and for the same reason: nothing outside the
  * plugin's control is trusted to be the right shape. Returns null for
@@ -4076,7 +4230,7 @@ class LinknoteListView extends ItemView {
   }
 
   getDisplayText() {
-    return 'Linknotes';
+    return this.plugin.settings.listScope === 'vault' ? 'Linknote inbox' : 'Linknotes';
   }
 
   getIcon() {
@@ -4092,11 +4246,16 @@ class LinknoteListView extends ItemView {
     // them with the rows would take the caret out of the box on the first
     // keystroke, and the box would be unusable.
     this.query = '';
+    // Two rows. Four controls on one line squeezed the search box down to a
+    // couple of characters in a sidebar of ordinary width, which made it
+    // useless exactly where it is needed most.
     const tools = el.createDiv({ cls: 'lkn-list-tools' });
+    const topRow = tools.createDiv({ cls: 'lkn-list-toolrow' });
+    const searchRow = tools.createDiv({ cls: 'lkn-list-toolrow' });
 
     // This note, or the whole vault. The vault-wide list is the inbox: what
     // everyone has written, wherever it is, with the unread rows dotted.
-    const scope = tools.createEl('select', { cls: 'dropdown lkn-list-scope' });
+    const scope = topRow.createEl('select', { cls: 'dropdown lkn-list-scope' });
     scope.setAttribute('aria-label', 'Scope');
     for (const [value, label] of LIST_SCOPES) {
       const option = scope.createEl('option', { text: label });
@@ -4110,7 +4269,7 @@ class LinknoteListView extends ItemView {
     });
     this.scopeEl = scope;
 
-    const search = tools.createEl('input', { cls: 'lkn-list-search', type: 'search' });
+    const search = searchRow.createEl('input', { cls: 'lkn-list-search', type: 'search' });
     search.placeholder = 'Search these linknotes';
     search.setAttribute('aria-label', 'Search these linknotes');
     search.addEventListener('input', () => {
@@ -4118,7 +4277,7 @@ class LinknoteListView extends ItemView {
       this.draw();
     });
 
-    const sort = tools.createEl('select', { cls: 'dropdown lkn-list-sort' });
+    const sort = topRow.createEl('select', { cls: 'dropdown lkn-list-sort' });
     sort.setAttribute('aria-label', 'Order');
     for (const [value, label] of LIST_SORTS) {
       const option = sort.createEl('option', { text: label });
@@ -4133,7 +4292,7 @@ class LinknoteListView extends ItemView {
 
     // Only the vault-wide list gets the button: read marks are per note
     // shown, and "all" meaning "all in this one note" would surprise.
-    const markAll = tools.createEl('button', { cls: 'lkn-list-markall', text: 'Mark all read' });
+    const markAll = searchRow.createEl('button', { cls: 'lkn-list-markall', text: 'Mark all read' });
     markAll.setAttribute('aria-label', 'Mark every linknote read');
     markAll.setAttribute('title', 'Mark every linknote read');
     markAll.addEventListener('click', () => this.plugin.markAllLinknotesRead());
@@ -4166,6 +4325,14 @@ class LinknoteListView extends ItemView {
 
     const vaultWide = this.plugin.settings.listScope === 'vault';
     if (this.markAllEl) this.markAllEl.toggleClass('lkn-hidden', !vaultWide);
+    // The view is named for what it is showing, so the whole-vault list is
+    // recognisable as the place unread linknotes are waiting rather than
+    // looking like the same list with different rows.
+    try {
+      this.leaf.updateHeader();
+    } catch (e) {
+      /* the tab keeps the name it had */
+    }
 
     let file = null;
     let entries = [];
@@ -5267,6 +5434,8 @@ module.exports.isOwnAuthor = isOwnAuthor;
 module.exports.diffKnown = diffKnown;
 module.exports.noticeText = noticeText;
 module.exports.sanitizeSeenState = sanitizeSeenState;
+module.exports.headSlot = headSlot;
+module.exports.badgeText = badgeText;
 module.exports.rowMatches = rowMatches;
 module.exports.sortRows = sortRows;
 module.exports.safeFolder = safeFolder;

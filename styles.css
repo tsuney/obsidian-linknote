@@ -171,12 +171,23 @@ body.is-mobile .lkn-modal-mobile .lkn-buttons {
 }
 
 /* The sidebar's search box and order, above the rows. */
+/*
+ * Two rows: the scope and the order above, the search box below with the
+ * button beside it. On one line the search box was squeezed to a couple of
+ * characters in a sidebar of ordinary width.
+ */
 .lkn-list .lkn-list-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lkn-list .lkn-list-toolrow {
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 6px 8px 8px 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .lkn-list .lkn-list-search {
@@ -186,15 +197,17 @@ body.is-mobile .lkn-modal-mobile .lkn-buttons {
 }
 
 .lkn-list .lkn-list-sort {
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-width: 0;
   font-size: var(--font-ui-smaller);
-  max-width: 45%;
 }
 
+/* The scope and the order share the top row evenly, neither crowding out
+ * the other whatever their labels say. */
 .lkn-list .lkn-list-scope {
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-width: 0;
   font-size: var(--font-ui-smaller);
-  max-width: 40%;
 }
 
 .lkn-list .lkn-list-markall {
@@ -238,6 +251,41 @@ body.is-mobile .lkn-modal-mobile .lkn-buttons {
 /* The whole notice is the doorway to the list. */
 .lkn-notice {
   cursor: pointer;
+}
+
+.lkn-notice-hint {
+  margin-top: 2px;
+  font-size: var(--font-ui-smaller);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/*
+ * The unread count on the ribbon icon. A notice is gone in seconds; this
+ * stays until the linknotes behind it have been read, which is what someone
+ * who was looking elsewhere needs. Drawn from an attribute so that nothing is
+ * inserted into Obsidian's own button.
+ */
+.side-dock-ribbon-action.lkn-has-unread {
+  position: relative;
+}
+
+.side-dock-ribbon-action.lkn-has-unread::after {
+  content: attr(data-lkn-unread);
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  line-height: 14px;
+  font-weight: var(--font-bold);
+  text-align: center;
+  pointer-events: none;
 }
 
 /* Linknote — settings */

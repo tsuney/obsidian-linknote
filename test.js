@@ -1187,6 +1187,28 @@ console.log('\nupdate notices — the sentence a notice says');
   eq('no changes, no sentence', noticeText([]), '');
 }
 
+console.log('\nthe inbox — what heads a row');
+{
+  const { headSlot } = m;
+  eq('unread shows the dot', headSlot(true, '📱'), 'dot');
+  eq('the dot wins over the marker, never both', headSlot(true, '🙆'), 'dot');
+  eq('once read, the marker takes the slot', headSlot(false, '📱'), 'marker');
+  eq('read with no marker leaves it empty', headSlot(false, ''), 'none');
+  eq('a marker of only spaces is no marker', headSlot(false, '   '), 'none');
+  eq('unread with no marker still shows the dot', headSlot(true, ''), 'dot');
+}
+
+console.log('\nthe inbox — the count on the ribbon');
+{
+  const { badgeText } = m;
+  eq('nothing unread, no badge', badgeText(0), '');
+  eq('one unread', badgeText(1), '1');
+  eq('ninety-nine is shown as itself', badgeText(99), '99');
+  eq('past a hundred it stops counting', badgeText(100), '99+');
+  eq('a negative count is no badge', badgeText(-3), '');
+  eq('a count that is not a number is no badge', badgeText(undefined), '');
+}
+
 console.log('\nupdate notices — the read state is checked before use');
 {
   const { sanitizeSeenState } = m;

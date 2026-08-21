@@ -134,7 +134,7 @@ Above the rows are a search box and an order. Typing narrows the list: every wor
 
 The cards answer "what is written here". The list answers "what has been written about this note, and where". On mobile it is the main answer, since a card has nowhere to go there.
 
-The list has a scope: **This note**, or **Whole vault**. The vault-wide list is the inbox for a shared vault — every linknote anyone has written, ordered recently-changed first by default, with a dot on every row this device has not shown yet and a **Mark all read** button. Rows in this-note scope are marked read as they are listed; the vault-wide list marks a row read only when you open it.
+The list has a scope: **This note**, or **Whole vault**. The vault-wide list — the **Linknote inbox** — is for a shared vault: every linknote anyone has written, ordered recently-changed first by default, with a **Mark all read** button. Each row is headed by a dot while this device has not shown it yet, and by the marker of whoever wrote it once it has been read — one slot, never both. Rows in this-note scope are marked read as they are listed; the inbox marks a row read only when you open it.
 
 ### Cards
 
@@ -175,7 +175,7 @@ A vault shared between people — Obsidian Sync, which is paid, or any file-sync
 
 Set **Author** on each device, and give each person a different **Marker character**. Cards and sidebar rows are then headed by the marker, the author and the date, so who wrote what is clear at a glance. Everyone should use the same **Linknote folder**: that is how a marker written with someone else's character is recognized here. On a call, share the screen in Reading view and write the linknote as the point comes up.
 
-Other people's linknotes announce themselves. As they arrive over sync — and on start-up, for whatever came in while the vault was closed — one notice sums them up by author: *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)*. Clicking the notice opens the vault-wide sidebar list, where unread rows carry a dot. Linknotes whose author matches your own **Author** setting are never announced, and read marks are kept per device, in the app's local storage — they are this device's memory of what it has shown you, and never travel over sync. The notice can be turned off in settings; the dots stay either way.
+Other people's linknotes announce themselves. As they arrive over sync — and on start-up, for whatever came in while the vault was closed — one notice sums them up by author: *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)*. Clicking it opens the inbox. A notice does not wait for you, so the ribbon icon also carries the number of linknotes still unread, which stays until they have been read. Linknotes whose author matches your own **Author** setting are never announced, and read marks are kept per device, in the app's local storage — they are this device's memory of what it has shown you, and never travel over sync. The notice can be turned off in settings; the dots stay either way.
 
 Linknote does nothing about conflicts. Two people editing one source note at the same time is left to your sync tool, and two linknotes written offline on the same block can end up wanting the same name. **Author** is a setting, not an identity, and it is empty by default — a row then shows the date alone. Cards are desktop Reading view only, so on a shared screen only the presenter sees them; everyone else sees the linknote when their vault next syncs.
 
@@ -249,6 +249,13 @@ node test/integration.js  # note creation end to end, against a fake vault
 ## Changelog
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
+
+### 0.20.2
+
+- The ribbon icon carries the unread count, and notices stand for twenty seconds rather than eight.
+- A row in the inbox is headed by the marker of whoever wrote it, once the unread dot has gone.
+- The search box in the sidebar is usable again; the whole-vault list is named **Linknote inbox**.
+- Editing someone else's linknote yourself no longer announces it back to you.
 
 ### 0.20.1
 

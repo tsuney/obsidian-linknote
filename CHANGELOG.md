@@ -1,5 +1,13 @@
 # Changelog
 
+### 0.20.2
+
+- **The ribbon icon carries the unread count.** A notice is gone in seconds and only reaches whoever happened to be looking; the count stays until the linknotes behind it have been read. Clicking it opens the inbox when something is waiting. Notices now stand for twenty seconds rather than eight, and say that clicking opens the inbox.
+- **A row in the inbox is headed by the marker of whoever wrote it, once the unread dot has gone.** One slot, never both: while a linknote is unread the dot is what matters, and after that the character says whose it is, the way a card is headed. The character is read from the marker left in the source note — the same place a card reads it — so it works for every linknote already written, with no change to the template.
+- **The search box is usable again.** Four controls on one line squeezed it to a couple of characters in a sidebar of ordinary width. The scope and the order share the top row; the search box and **Mark all read** have the second to themselves.
+- **The whole-vault list is named Linknote inbox**, so what it is does not have to be inferred from the scope dropdown.
+- **Editing someone else's linknote yourself no longer announces it to you.** Typing into a linknote goes through Obsidian's own save rather than this plugin's writes, so the edit came back as news — under the other person's name, since the name shown is the author of the note, not whoever last touched it. A linknote open in front of you on this device is now taken as yours to change. A change arriving over sync for the note on screen is missed this way, but it is the one change already in plain sight.
+
 ### 0.20.1
 
 - **A card that fell inline comes back to the margin when the pane is made wide again.** Margin or inline was decided when something remembered to ask, and a window resize was the only thing that asked — so widening the pane any other way (collapsing a sidebar, closing a split, changing the zoom or the readable line width) left the cards in the text however much room they had been given. Each pane is now watched for its own size, so the question is asked again whenever the answer could have changed.
