@@ -178,6 +178,7 @@ const DEFAULT_SETTINGS = {
   readOn: 'open',
   noteAuthor: '',
   unsignedIsMine: true,
+  chatScope: 'mine',
 };
 
 /*
@@ -3992,7 +3993,13 @@ class LinknotePlugin extends Plugin {
       for (const own of namesOf(this.settings.author)) {
         if (names.indexOf(own) === -1) names.push(own);
       }
-      return chatWorthy(authorOf(fm), linknoteAuthor, names, this.settings.unsignedIsMine);
+      return chatWorthy(
+        authorOf(fm),
+        linknoteAuthor,
+        names,
+        this.settings.unsignedIsMine,
+        this.settings.chatScope === 'vault'
+      );
     } catch (e) {
       return false;
     }
@@ -4476,23 +4483,29 @@ function isOwnNote(noteAuthor, names) {
  * A linknote signed by nobody is treated as somebody else's. It is more
  * useful to be told about an unsigned annotation than to have it swallowed.
  */
-function chatWorthy(noteAuthorText, linknoteAuthor, myNames, unsignedIsMine) {
+function chatWorthy(noteAuthorText, linknoteAuthor, myNames, unsignedIsMine, everyNote) {
   const noteAuthors = namesOf(noteAuthorText);
   const mine = namesOf(myNames.join ? myNames.join(',') : myNames);
   if (!mine.length) return false;
 
-  // Mine to be told about. A note that names nobody is a separate question:
-  // in a vault that is mostly one person's, an unsigned note is theirs and
-  // saying so is right; in a vault three people write into, it is a guess
-  // that puts other people's notes in your channel. Which is true is not
-  // something the plugin can see, so it is asked rather than assumed.
-  if (!noteAuthors.length) {
-    // Asked for explicitly by the caller. The setting behind it ships on,
-    // because a vault where nothing is signed would otherwise never fire;
-    // this function makes no assumption of its own.
-    if (!unsignedIsMine) return false;
-  } else if (!noteAuthors.some((name) => mine.indexOf(name) !== -1)) {
-    return false;
+  // Whose note it has to be. Told about every note, the message answers
+  // "what is happening in the vault"; told about mine alone, it answers
+  // "has anyone replied to me". Both are reasonable to want and they differ
+  // in volume more than in kind, so it is a setting rather than a decision.
+  //
+  // A note that names nobody is a separate question again: in a vault that is
+  // mostly one person's, an unsigned note is theirs and saying so is right;
+  // in one that three people fill, it is a guess that puts their notes in
+  // your channel. The plugin cannot see which, so it asks.
+  if (!everyNote) {
+    if (!noteAuthors.length) {
+      // Asked for explicitly by the caller. The setting behind it ships on,
+      // because a vault where nothing is signed would otherwise never fire;
+      // this function makes no assumption of its own.
+      if (!unsignedIsMine) return false;
+    } else if (!noteAuthors.some((name) => mine.indexOf(name) !== -1)) {
+      return false;
+    }
   }
   // Somebody else's to have written.
   const who = String(linknoteAuthor == null ? '' : linknoteAuthor).trim();
@@ -5908,6 +5921,26 @@ class LinknoteSettingTab extends PluginSettingTab {
           this.redraw();
         })
       );
+
+    new Setting(containerEl)
+      .setName('Which notes to be told about')
+      .setDesc(
+        'Notes of your own, or every note in the vault. Your own linknotes are never announced ' +
+          'either way, nor is anyone annotating a note they wrote themselves — the difference is ' +
+          'only whether someone else annotating a note that is not yours reaches you. Every note ' +
+          'says what is happening in the vault; your own says whether anyone has replied to you, ' +
+          'and is much quieter.'
+      )
+      .addDropdown((d) => {
+        d.addOption('mine', 'Notes I wrote');
+        d.addOption('vault', 'Every note in the vault');
+        d.setValue(s.chatScope === 'vault' ? 'vault' : 'mine');
+        d.onChange(async (v) => {
+          s.chatScope = v === 'vault' ? 'vault' : 'mine';
+          await this.plugin.saveSettings();
+          this.redraw();
+        });
+      });
 
     new Setting(containerEl)
       .setName('Your names in note properties')

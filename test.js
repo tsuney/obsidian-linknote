@@ -1388,6 +1388,15 @@ console.log('\nchat notifications — whose annotation is it');
   // A note written with a colleague: they are one of its authors, so their
   // annotation is not news. Reverse this if it should be.
   check('a co-author annotating our shared note is not told', !chatWorthy('Tsuneyama, Panyin', 'Panyin', ME));
+
+  // Widened to the whole vault: whose note it is stops mattering, but who
+  // wrote the linknote still does.
+  const ALL = [ME, true, true];
+  check('someone else on someone else’s note is told', chatWorthy('Panyin', 'Ado', ...ALL));
+  check('and on a note of mine, as before', chatWorthy('Tsuneyama', 'Ado', ...ALL));
+  check('my own writing is still never told', !chatWorthy('Panyin', 'Tsune', ...ALL));
+  check('nor is an author annotating their own note', !chatWorthy('Panyin', 'Panyin', ...ALL));
+  check('an unsigned note needs no permission when every note counts', chatWorthy('', 'Ado', ME, false, true));
   check('but a fourth person on that note is', chatWorthy('Tsuneyama, Panyin', 'Ado', ME));
 }
 

@@ -1,5 +1,9 @@
 # Changelog
 
+### 0.22.5
+
+- **Which notes to be told about** — your own, or every note in the vault. Told about every note, the message answers *what is happening in the vault*; told about your own, it answers *has anyone replied to me*, and is much quieter. Both are reasonable to want, and they differ in volume more than in kind, so it is a setting rather than a decision. Your own linknotes are never announced either way, and neither is anyone annotating a note they wrote themselves.
+
 ### 0.22.3 / 0.22.4
 
 - **Notes with no author at all count as yours**, under a new setting of that name. Most notes in most vaults carry no author property — in one vault of two and a half thousand notes, nine in ten of them — so without this the chat message would only ever fire on the few that are signed. It ships on for that reason, and can be turned off in a vault several people write into, where an unsigned note is as likely to be theirs as yours. Your own annotations on such a note are still not announced to you.

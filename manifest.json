@@ -1,7 +1,7 @@
 {
   "id": "linknote",
   "name": "Linknote",
-  "version": "0.22.4",
+  "version": "0.22.5",
   "minAppVersion": "1.6.6",
   "description": "Write a side note while reading. It is saved as its own note, and a small link plus a block ID is left at the exact spot in the source.",
   "author": "Tsuneyama",
