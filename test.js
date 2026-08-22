@@ -1285,29 +1285,56 @@ console.log('\nchat notifications — what may leave the vault');
   const { chatText, safeWebhook } = m;
 
   eq(
-    'one linknote from one person',
-    chatText([{ author: 'Yamada', kind: 'new' }]),
-    'Linknote — 1 linknote on your notes (Yamada: 1)'
+    'who wrote it, and whose note they wrote it on',
+    chatText([{ author: 'Yamada', kind: 'new', noteAuthor: 'Tsuneyama' }]),
+    "Linknote — 1 linknote\nYamada → Tsuneyama's notes: 1"
   );
   eq(
-    'several are counted per author',
+    'the same pair is counted together, different pairs are not',
     chatText([
-      { author: 'Yamada', kind: 'new' },
-      { author: 'Sato', kind: 'edited' },
-      { author: 'Yamada', kind: 'new' },
+      { author: 'Yamada', kind: 'new', noteAuthor: 'Tsuneyama' },
+      { author: 'Sato', kind: 'edited', noteAuthor: 'Panyin' },
+      { author: 'Yamada', kind: 'new', noteAuthor: 'Tsuneyama' },
     ]),
-    'Linknote — 3 linknotes on your notes (Yamada: 2 · Sato: 1)'
+    "Linknote — 3 linknotes\nYamada → Tsuneyama's notes: 2\nSato → Panyin's notes: 1"
+  );
+  eq(
+    'one person on two people’s notes is two lines',
+    chatText([
+      { author: 'Yamada', kind: 'new', noteAuthor: 'Tsuneyama' },
+      { author: 'Yamada', kind: 'new', noteAuthor: 'Panyin' },
+    ]),
+    "Linknote — 2 linknotes\nYamada → Tsuneyama's notes: 1\nYamada → Panyin's notes: 1"
+  );
+  eq(
+    'a note signed by nobody says so',
+    chatText([{ author: 'Yamada', kind: 'new', noteAuthor: '' }]),
+    'Linknote — 1 linknote\nYamada → unsigned notes: 1'
+  );
+  eq(
+    'a linknote signed by nobody says so too',
+    chatText([{ author: '', kind: 'new', noteAuthor: 'Tsuneyama' }]),
+    "Linknote — 1 linknote\n(no author) → Tsuneyama's notes: 1"
   );
   eq('nothing to say, nothing said', chatText([]), '');
-  eq(
-    'a linknote naming nobody is still counted',
-    chatText([{ author: '', kind: 'new' }]),
-    'Linknote — 1 linknote on your notes ((no author): 1)'
-  );
+
+  // However many people are at work, the message stays a message.
+  const many = [];
+  for (let i = 0; i < 12; i += 1) many.push({ author: 'P' + i, kind: 'new', noteAuthor: 'Tsuneyama' });
+  const capped = chatText(many);
+  eq('the list is capped', capped.split('\n').length, 10);
+  check('and says how many it left out', capped.indexOf('and 4 more') !== -1);
+  check('while the total is still right', capped.indexOf('12 linknotes') !== -1);
 
   // The whole point of the format: the message carries no content.
   const line = chatText([
-    { author: 'Yamada', kind: 'new', note: 'NEC negotiating position', text: 'confidential' },
+    {
+      author: 'Yamada',
+      kind: 'new',
+      noteAuthor: 'Tsuneyama',
+      note: 'NEC negotiating position',
+      text: 'confidential',
+    },
   ]);
   check('the note name does not leave the vault', line.indexOf('NEC') === -1);
   check('nor does any of the text', line.indexOf('confidential') === -1);

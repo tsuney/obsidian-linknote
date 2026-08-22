@@ -214,6 +214,9 @@ const STARTUP_QUIET_MS = 30000;
 // from another window, short enough not to sit over the text. What is missed
 // anyway is kept by the ribbon count, which does not time out.
 const NOTICE_SHOWN_MS = 20000;
+// How many "who on whose notes" lines one chat message lists before the rest
+// are summed up. A notice that scrolls is not read.
+const CHAT_MAX_LINES = 8;
 // How long after this device writes a linknote file its own create and modify
 // events are ignored. Well past any burst of events one write can raise.
 const SELF_WRITE_MS = 10000;
@@ -3965,7 +3968,8 @@ class LinknotePlugin extends Plugin {
       // A chat message is only for what lands on a note of your own. The
       // in-app notice covers everything; this one is the tap on the shoulder
       // that reaches you when Obsidian is not what you are looking at.
-      if (this.isOnMyNote(file, author)) mine.push(change);
+      const noteAuthor = this.chatSubjectOf(file, author);
+      if (noteAuthor !== null) mine.push(Object.assign({ noteAuthor }, change));
     }
 
     if (!changes.length) return;
@@ -3983,9 +3987,18 @@ class LinknotePlugin extends Plugin {
    * is not a path, and only Obsidian knows which note it means.
    */
   isOnMyNote(linknote, linknoteAuthor) {
+    return this.chatSubjectOf(linknote, linknoteAuthor) !== null;
+  }
+
+  /**
+   * Whose note this linknote is on, when it is worth telling about — and null
+   * when it is not. One call answers both, because the message names the note's
+   * author and asking twice would read the frontmatter twice.
+   */
+  chatSubjectOf(linknote, linknoteAuthor) {
     try {
       const { source } = this.sourceOfLinknote(linknote);
-      if (!source) return false;
+      if (!source) return null;
       const fm = (this.app.metadataCache.getFileCache(source) || {}).frontmatter || null;
       // The name your notes call you by, which is not always the name your
       // linknotes are signed with. Falls back to the Author when unset.
@@ -3993,15 +4006,17 @@ class LinknotePlugin extends Plugin {
       for (const own of namesOf(this.settings.author)) {
         if (names.indexOf(own) === -1) names.push(own);
       }
-      return chatWorthy(
-        authorOf(fm),
+      const noteAuthor = authorOf(fm);
+      const worthy = chatWorthy(
+        noteAuthor,
         linknoteAuthor,
         names,
         this.settings.unsignedIsMine,
         this.settings.chatScope === 'vault'
       );
+      return worthy ? noteAuthor : null;
     } catch (e) {
-      return false;
+      return null;
     }
   }
 
@@ -4598,22 +4613,32 @@ function chatText(changes) {
   const list = (changes || []).filter(Boolean);
   if (!list.length) return '';
 
-  const authors = new Map();
+  // Grouped by the pair that matters: who wrote it, and whose note they
+  // wrote it on. Both are people's names — still no note name and still none
+  // of the text, so nothing about what was said leaves the vault.
+  const pairs = new Map();
   for (const change of list) {
-    const name = String(change.author || '').trim() || '(no author)';
-    authors.set(name, (authors.get(name) || 0) + 1);
+    const who = String(change.author || '').trim() || '(no author)';
+    const whose = String(change.noteAuthor || '').trim();
+    const key = who + '\u0000' + whose;
+    pairs.set(key, (pairs.get(key) || 0) + 1);
   }
-  const who = Array.from(authors, ([name, count]) => name + ': ' + count).join(' · ');
+
+  const lines = [];
+  let dropped = 0;
+  for (const [key, count] of pairs) {
+    // However many people are at work, the message stays a message.
+    if (lines.length >= CHAT_MAX_LINES) {
+      dropped += count;
+      continue;
+    }
+    const [who, whose] = key.split('\u0000');
+    lines.push(who + ' → ' + (whose ? whose + "'s notes" : 'unsigned notes') + ': ' + count);
+  }
+  if (dropped) lines.push('and ' + dropped + ' more');
 
   const n = list.length;
-  return (
-    'Linknote — ' +
-    n +
-    (n === 1 ? ' linknote' : ' linknotes') +
-    ' on your notes (' +
-    who +
-    ')'
-  );
+  return 'Linknote — ' + n + (n === 1 ? ' linknote' : ' linknotes') + '\n' + lines.join('\n');
 }
 
 /** The unread count as it is drawn on the ribbon; nothing at all when zero. */
@@ -6021,7 +6046,9 @@ class LinknoteSettingTab extends PluginSettingTab {
           b.setDisabled(true);
           const failed = await this.plugin.sendChat(
             url,
-            chatText([{ author: s.author || '(no author)', kind: 'new' }]) + ' — test'
+            chatText([
+              { author: s.author || '(no author)', kind: 'new', noteAuthor: s.noteAuthor || s.author },
+            ]) + '\n(test)'
           );
           b.setDisabled(false);
           new Notice(

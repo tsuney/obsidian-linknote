@@ -1,5 +1,9 @@
 # Changelog
 
+### 0.22.6
+
+- **The chat message says whose notes were annotated, as well as by whom.** One line per pair — *Yamada → Tsuneyama's notes: 2* — which is what makes it possible to decide whether to look now or later. Both halves are people's names: still no note name and still none of the text, so nothing about what was said leaves the vault. A note signed by nobody is listed as *unsigned notes*. Long lists stop at eight lines and sum up the rest, because a message that scrolls is not read.
+
 ### 0.22.5
 
 - **Which notes to be told about** — your own, or every note in the vault. Told about every note, the message answers *what is happening in the vault*; told about your own, it answers *has anyone replied to me*, and is much quieter. Both are reasonable to want, and they differ in volume more than in kind, so it is a setting rather than a decision. Your own linknotes are never announced either way, and neither is anyone annotating a note they wrote themselves.

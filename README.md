@@ -258,6 +258,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### 0.22.6
+
+- The chat message names whose notes were annotated as well as who annotated them — one line per pair, still with no note name and no text.
+
 ### 0.22.5
 
 - **Which notes to be told about**: your own, or every note in the vault.
