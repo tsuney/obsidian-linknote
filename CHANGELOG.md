@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.22.8
+
+- **Mention everyone in the thread** — one switch that reaches your phone without a directory. The mentions added in 0.22.7 turned out to be unusable as posted: WeCom will only @ someone by the 帐号 (UserID) it issued, a string no note carries and nobody knows offhand, and it accepts a wrong one with a 200 and quietly omits the @ — so the failure looks exactly like success. `@all` needs nothing written down, and in the thread this feature is meant for there is only one person in it anyway. Off by default; the directory is what a shared group still uses, and is ignored while this is on.
+- The directory now says what the right-hand side has to be: the 帐号 (UserID) as the chat service spells it, not a display name and not a phone number the company directory does not hold. It also says that a wrong one is accepted in silence, because that is the part that costs an afternoon.
+
 ### 0.22.7
 
 - **Whoever wrote the annotated note is @-mentioned**, so the message reaches their phone rather than sitting in a channel. A new setting, **Who to @ in the message**, holds a small directory written as `Tsuneyama=tsuneyama, 潘寅=panyin`: the name a note signs itself with on the left, the chat account on the right. Nothing can work that out on its own — a vault knows people by what its notes call them, a chat service by an account — so a name that is not listed is simply not mentioned. A value of digits is taken for a phone number instead of an account.

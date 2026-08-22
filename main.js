@@ -179,6 +179,7 @@ const DEFAULT_SETTINGS = {
   noteAuthor: '',
   unsignedIsMine: true,
   chatScope: 'mine',
+  mentionAll: false,
   mentionMap: '',
 };
 
@@ -4033,7 +4034,11 @@ class LinknotePlugin extends Plugin {
     const url = safeWebhook(this.chat.webhook);
     const content = chatText(changes);
     if (!url || !content) return;
-    const who = mentionsFor(changes, parseMentionMap(this.settings.mentionMap));
+    const who = mentionsFor(
+      changes,
+      parseMentionMap(this.settings.mentionMap),
+      this.settings.mentionAll
+    );
     const failed = await this.sendChat(url, content, who);
     if (failed) new Notice('Linknote: the chat message was not sent — ' + failed);
   }
@@ -4682,11 +4687,20 @@ function parseMentionMap(text) {
  * anything else for an account name. WeCom accepts either, and which one a
  * person has to hand differs, so both are allowed rather than asked about.
  * Nobody is mentioned twice however many linknotes they collected.
+ *
+ * `everyone` short-circuits all of it. A chat service can only be told who to
+ * @ by an account it issued, and a vault has no way of learning what that is —
+ * so when the address points at a thread of one person, which is what this
+ * feature is for, naming that person is work with no purpose: @all reaches
+ * them and needs nothing written down. The directory is for the other case, a
+ * shared group, and the two are not combined — @all already covers everyone a
+ * directory entry could name.
  */
-function mentionsFor(changes, map) {
+function mentionsFor(changes, map, everyone) {
   const ids = [];
   const mobiles = [];
   const seen = new Set();
+  if (everyone) return { ids: ['@all'], mobiles: [] };
   if (!map || !map.get) return { ids, mobiles };
   for (const change of changes || []) {
     for (const name of namesOf(change && change.noteAuthor)) {
@@ -6064,18 +6078,36 @@ class LinknoteSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Mention everyone in the thread')
+      .setDesc(
+        'An @ so the message reaches a phone instead of waiting in a channel. Turn this on when ' +
+          'the address above points at a thread of your own, which is the usual arrangement: the ' +
+          'only person there is you, so there is nobody to single out and nothing to write down. ' +
+          'Leave it off for a shared group, where an @ to everyone would be an interruption for ' +
+          'people the note has nothing to do with, and name them in the directory below instead.'
+      )
+      .addToggle((t) =>
+        t.setValue(s.mentionAll).onChange(async (v) => {
+          s.mentionAll = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
       .setName('Who to @ in the message')
       .setDesc(
-        'A directory, written as name=account pairs separated by commas — for example: ' +
-          'Tsuneyama=tsuneyama, 潘寅=panyin. The left side is the name a note signs itself with; ' +
-          'the right side is the WeCom account (or a phone number, if that is what you have to ' +
-          'hand). Whoever wrote the annotated note is mentioned, so the message reaches their ' +
-          'phone rather than sitting in a channel. A name that is not listed is simply not ' +
-          'mentioned. Nothing can work this out on its own: a vault knows people by what its notes ' +
-          'call them, and a chat service by an account.'
+        'A directory for a shared group, written as name=account pairs separated by commas — for ' +
+          'example: Tsuneyama=WangXiaoMing, 潘寅=PanYin. The left side is the name a note signs ' +
+          'itself with. The right side must be the 帐号 (UserID) the chat service issued, exactly ' +
+          'as its own settings spell it — a display name is not it, and neither is a phone number ' +
+          'the company directory does not hold. Whoever wrote the annotated note is mentioned, and ' +
+          'only if they are in the group. Nothing can work this out on its own: a vault knows ' +
+          'people by what its notes call them, and a chat service by an account. WeCom accepts a ' +
+          'wrong account without complaint and simply omits the @, so check that one arrives. ' +
+          'Ignored while the switch above is on.'
       )
       .addText((t) => {
-        t.setPlaceholder('Tsuneyama=tsuneyama, 潘寅=panyin')
+        t.setPlaceholder('Tsuneyama=WangXiaoMing, 潘寅=PanYin')
           .setValue(s.mentionMap)
           .onChange(async (v) => {
             s.mentionMap = v.trim();
@@ -6130,7 +6162,7 @@ class LinknoteSettingTab extends PluginSettingTab {
           const failed = await this.plugin.sendChat(
             url,
             chatText(sample) + '\n(test)',
-            mentionsFor(sample, parseMentionMap(s.mentionMap))
+            mentionsFor(sample, parseMentionMap(s.mentionMap), s.mentionAll)
           );
           b.setDisabled(false);
           new Notice(

@@ -1380,6 +1380,33 @@ console.log('\nchat notifications — who gets an @');
   const unknown = mentionsFor([{ noteAuthor: 'Someone Else' }], map);
   eq('a name the directory does not know is not mentioned', unknown.ids.length, 0);
   eq('an empty directory mentions nobody', mentionsFor([{ noteAuthor: 'Tsuneyama' }], new Map()).ids.length, 0);
+
+  // A thread of one person: an account nobody can look up is not needed to
+  // reach the only person there. This is what the directory could not do —
+  // WeCom took the accounts above without complaint and quietly omitted the @,
+  // because a name a note signs itself with is not an account it issued.
+  const all = mentionsFor([{ noteAuthor: 'Tsuneyama' }], map, true);
+  eq('everyone in the thread is one mention', all.ids.join(','), '@all');
+  eq('and no phone number besides', all.mobiles.length, 0);
+
+  const allUnknown = mentionsFor([{ noteAuthor: 'Someone the directory never heard of' }], map, true);
+  eq('a name nobody wrote down still reaches the thread', allUnknown.ids.join(','), '@all');
+
+  const allEmpty = mentionsFor([{ noteAuthor: '' }], new Map(), true);
+  eq('with no directory at all it still works', allEmpty.ids.join(','), '@all');
+
+  const allTwice = mentionsFor(
+    [{ noteAuthor: 'Tsuneyama' }, { noteAuthor: '潘寅' }, { noteAuthor: 'Tsuneyama' }],
+    map,
+    true
+  );
+  eq('and everyone is not said three times', allTwice.ids.length, 1);
+
+  eq(
+    'off, the directory decides as before',
+    mentionsFor([{ noteAuthor: 'Tsuneyama' }], map, false).ids.join(','),
+    'tsuneyama'
+  );
 }
 
 console.log('\nchat notifications — whose note is it');
