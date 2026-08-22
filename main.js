@@ -177,6 +177,7 @@ const DEFAULT_SETTINGS = {
   listScope: 'note',
   readOn: 'open',
   noteAuthor: '',
+  unsignedIsMine: false,
 };
 
 /*
@@ -3988,8 +3989,10 @@ class LinknotePlugin extends Plugin {
       // The name your notes call you by, which is not always the name your
       // linknotes are signed with. Falls back to the Author when unset.
       const names = namesOf(this.settings.noteAuthor || this.settings.author);
-      names.push.apply(names, namesOf(this.settings.author));
-      return chatWorthy(authorOf(fm), linknoteAuthor, names);
+      for (const own of namesOf(this.settings.author)) {
+        if (names.indexOf(own) === -1) names.push(own);
+      }
+      return chatWorthy(authorOf(fm), linknoteAuthor, names, this.settings.unsignedIsMine);
     } catch (e) {
       return false;
     }
@@ -4473,12 +4476,21 @@ function isOwnNote(noteAuthor, names) {
  * A linknote signed by nobody is treated as somebody else's. It is more
  * useful to be told about an unsigned annotation than to have it swallowed.
  */
-function chatWorthy(noteAuthorText, linknoteAuthor, myNames) {
+function chatWorthy(noteAuthorText, linknoteAuthor, myNames, unsignedIsMine) {
   const noteAuthors = namesOf(noteAuthorText);
   const mine = namesOf(myNames.join ? myNames.join(',') : myNames);
-  if (!noteAuthors.length || !mine.length) return false;
-  // Mine to be told about.
-  if (!noteAuthors.some((name) => mine.indexOf(name) !== -1)) return false;
+  if (!mine.length) return false;
+
+  // Mine to be told about. A note that names nobody is a separate question:
+  // in a vault that is mostly one person's, an unsigned note is theirs and
+  // saying so is right; in a vault three people write into, it is a guess
+  // that puts other people's notes in your channel. Which is true is not
+  // something the plugin can see, so it is asked rather than assumed.
+  if (!noteAuthors.length) {
+    if (!unsignedIsMine) return false;
+  } else if (!noteAuthors.some((name) => mine.indexOf(name) !== -1)) {
+    return false;
+  }
   // Somebody else's to have written.
   const who = String(linknoteAuthor == null ? '' : linknoteAuthor).trim();
   if (!who) return true;
@@ -5895,13 +5907,15 @@ class LinknoteSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Your name in note properties')
+      .setName('Your names in note properties')
       .setDesc(
-        'How a note of yours says it is yours — the name in its own author property. That is often ' +
-          'not the name above: the Author is per device, so that a linknote written on your phone ' +
-          'can be told from one written at your desk, while your notes name you once as a person. ' +
-          'Several names can be given, separated by commas, and a note naming you among others ' +
-          'counts as yours. Left empty, the Author above is used.'
+        'How a note of yours says it is yours — the names in its own author property. Those are ' +
+          'often not the name above: the Author is per device, so that a linknote written on your ' +
+          'phone can be told from one written at your desk, while your notes name you as a person. ' +
+          'Give as many as you answer to, separated by commas (for example: Tsuneyama, Tsune). ' +
+          'A note naming you among others counts as yours, and a linknote signed with any name the ' +
+          'note itself lists is an author annotating their own note, so it is not announced. Left ' +
+          'empty, the Author above is used.'
       )
       .addText((t) =>
         t
@@ -5911,6 +5925,22 @@ class LinknoteSettingTab extends PluginSettingTab {
             s.noteAuthor = v.trim();
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(containerEl)
+      .setName('Notes with no author are yours')
+      .setDesc(
+        'Most notes in most vaults carry no author property at all. With this on, such a note counts ' +
+          'as yours and annotations on it are posted. That is right in a vault you wrote nearly all ' +
+          'of, and wrong in one several people fill, where it would put their notes in your channel. ' +
+          'Off by default, because an unsigned note says nothing about whose it is, and claiming it ' +
+          'is a guess.'
+      )
+      .addToggle((t) =>
+        t.setValue(s.unsignedIsMine).onChange(async (v) => {
+          s.unsignedIsMine = v;
+          await this.plugin.saveSettings();
+        })
       );
 
     new Setting(containerEl)

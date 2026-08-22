@@ -211,7 +211,8 @@ Linknote does nothing about conflicts. Two people editing one source note at the
 | Open the linknote after creating it | off | opens in a split, once the block reference resolves |
 | Notify when linknotes change | on | one notice per burst of other people's additions and edits; unread dots stay either way |
 | Count a linknote as read | When you say so | the tick on a card or row, or opening the linknote; *When it is shown* clears it as a card or row draws it |
-| Your name in note properties | empty | how a note of yours signs itself, which is often not the per-device Author; comma-separated for several. Empty means use Author |
+| Your names in note properties | empty | the names a note of yours signs itself with, which are often not the per-device Author; comma-separated for several. Empty means use Author |
+| Notes with no author are yours | off | counts an unsigned note as yours for the chat message. Right in a vault you wrote nearly all of; wrong in one several people fill |
 | Post to a chat channel | off | one line to a webhook when someone else annotates a note of yours; the only thing this plugin ever sends |
 | Webhook address | empty | HTTPS only. A WeCom group robot address, or anything accepting the same JSON. Kept on the device rather than in the vault, so each person in a shared vault has their own |
 
@@ -255,6 +256,11 @@ node test/integration.js  # note creation end to end, against a fake vault
 ## Changelog
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
+
+### 0.22.3
+
+- Notes with no author property can count as yours, under a setting of that name (off by default).
+- **Your names in note properties** takes as many names as you answer to, separated by commas.
 
 ### 0.22.2
 

@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.22.3
+
+- **Notes with no author at all can count as yours**, under a new setting of that name. Most notes in most vaults carry no author property — in one vault of two and a half thousand notes, nine in ten of them — so without this the chat message only ever fires on the few that are signed. It is off by default all the same: an unsigned note says nothing about whose it is, and in a vault several people fill, claiming them all would put their notes in your channel. Your own annotations on such a note are still not announced to you.
+- **Your names in note properties** is plural, and always was: give as many names as you answer to, separated by commas. The wording said "name", which read as though only one was allowed.
+
 ### 0.22.2
 
 - **A name the note itself lists is one of its authors, whichever device it came from.** A chat message is now skipped when the linknote's author appears among the source note's own authors — that is an author annotating their own note, not news. Until now the linknote was compared only against the Author of *this* device, which is per device by design, so a note signed `Tsuneyama, Tsune` annotated under the name `Tsuneyama` was announced back to the person who wrote both. A note declares who it belongs to; that declaration is now what decides.

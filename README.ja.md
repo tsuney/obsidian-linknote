@@ -213,7 +213,8 @@ body: {{bodyYaml}}
 | Open the linknote after creating it | オフ | ブロック参照が解決してから分割ビューで開きます |
 | Notify when linknotes change | オン | 他の人の追加・編集をまとめて 1 本の通知にします。オフでも未読の点は残ります |
 | Count a linknote as read | When you say so | カードや行のチェック、または補足ノートを開いたときに既読。*When it is shown* は表示された時点で既読 |
-| Your name in note properties | 空欄 | 自分のノートの `author` プロパティに入る名前。端末ごとの Author とは別のことが多いため分けています。カンマ区切りで複数可。空欄なら Author を使います |
+| Your names in note properties | 空欄 | 自分のノートの `author` プロパティに入る名前。端末ごとの Author とは別のことが多いため分けています。**カンマ区切りで複数指定可**。空欄なら Author を使います |
+| Notes with no author are yours | オフ | `author` を持たないノートを自分のものとみなします。ほぼ自分が書いた Vault では有用、複数人が書く Vault では他人のノートまで対象になります |
 | Post to a chat channel | オフ | 自分のノートに他の人が補足を付けたとき、Webhook へ 1 行投稿します。このプラグインが送信を行う唯一の箇所です |
 | Webhook address | 空欄 | HTTPS のみ。企业微信のグループロボット、または同じ JSON を受け取るもの。**Vault ではなく端末に保存**されるので、共有 Vault でも各自が自分の宛先を持てます |
 

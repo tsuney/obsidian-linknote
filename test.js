@@ -1368,7 +1368,18 @@ console.log('\nchat notifications — whose annotation is it');
   check('my device name is mine even when the note omits it', !chatWorthy('Tsuneyama', 'Tsune', ME));
 
   check('a note that is not mine is never told', !chatWorthy('Panyin, Ado', 'Yamada', ME));
-  check('nor one naming nobody', !chatWorthy('', 'Panyin', ME));
+
+  // Several names, which is the ordinary case: one person answers to more
+  // than one, and the note may only use one of them.
+  check('any one of my names makes the note mine', chatWorthy('Tsuneyama', 'Panyin', ['Tsune', 'Tsuneyama']));
+  check('and so does another', chatWorthy('常山宏彰', 'Panyin', ['Tsuneyama', '常山宏彰']));
+  check('a name I did not claim does not', !chatWorthy('常山宏彰', 'Panyin', ['Tsuneyama']));
+
+  // A note naming nobody: a guess either way, so it is asked, not assumed.
+  check('an unsigned note is not mine by default', !chatWorthy('', 'Panyin', ME));
+  check('unless I say unsigned notes are mine', chatWorthy('', 'Panyin', ME, true));
+  check('and even then my own writing on one is not news', !chatWorthy('', 'Tsune', ME, true));
+  check('nor from the name my notes use', !chatWorthy('', 'Tsuneyama', ME, true));
   check('and with no name of my own, nothing is told', !chatWorthy(NOTE, 'Panyin', []));
 
   // Better to hear about an unsigned annotation than to swallow it.
