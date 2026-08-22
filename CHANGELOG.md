@@ -1,5 +1,9 @@
 # Changelog
 
+### 0.22.1
+
+- **The chat switch no longer lies.** Switching it on before pasting the webhook address recorded it as off — the switch and the address were folded into one flag — and pasting the address afterwards did not put it back. The result was a switch that looked on, a test button that worked, and nothing ever sent. Asking for it and being able to do it are now two separate things, and the settings screen says plainly which state it is in: *Ready*, *Switched on, but nothing will be sent: there is no webhook address yet*, or *Switched off*.
+
 ### 0.22.0
 
 - **A chat notification, for when Obsidian is not what you are looking at.** When someone else annotates a note *you* wrote, one line can be posted to a chat channel: a WeCom (企业微信) group robot address, or anything else accepting the same JSON. Both halves of the condition are judged by the author property — the linknote's author is not you, and the source note's author is — so **Author** has to be set on every device for it to work at all.

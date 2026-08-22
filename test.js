@@ -1364,12 +1364,20 @@ console.log('\nchat notifications — the address is this device’s alone');
   check('a sound configuration is on', sound.on);
   eq('and keeps its address', sound.webhook, 'https://a.example/h');
 
+  // 0.22.0 folded "asked for" and "can happen" into one flag, so switching it
+  // on before pasting the address recorded off, and pasting the address
+  // afterwards did not put it back: a switch that looked on, and a feature
+  // that was not. The two are kept apart now.
   const noUrl = sanitizeChatConfig({ on: true, webhook: '' });
-  check('on with no address is not on — it would do nothing', !noUrl.on);
+  check('switching it on is remembered even with no address yet', noUrl.on);
+  check('but nothing is live until there is one', !m.chatIsLive(noUrl));
+  check('and it goes live once the address arrives', m.chatIsLive({ on: true, webhook: 'https://a.example/h' }));
+  check('an address without the switch is not live', !m.chatIsLive({ on: false, webhook: 'https://a.example/h' }));
+  check('nothing at all is not live', !m.chatIsLive(null));
 
   const httpOnly = sanitizeChatConfig({ on: true, webhook: 'http://a.example/h' });
   check('an http address is refused', !httpOnly.webhook);
-  check('and cannot leave it switched on', !httpOnly.on);
+  check('so it is not live', !m.chatIsLive(httpOnly));
 
   const nothing = sanitizeChatConfig(null);
   check('nothing stored means off', !nothing.on);

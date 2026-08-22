@@ -4002,7 +4002,7 @@ class LinknotePlugin extends Plugin {
    * worse than none, because it is trusted.
    */
   async postToChat(changes) {
-    if (Platform.isMobile || !this.chat || !this.chat.on) return;
+    if (Platform.isMobile || !chatIsLive(this.chat)) return;
     const url = safeWebhook(this.chat.webhook);
     const content = chatText(changes);
     if (!url || !content) return;
@@ -4573,9 +4573,17 @@ function sanitizeChatConfig(data) {
   const out = { on: false, webhook: '' };
   if (!data || typeof data !== 'object') return out;
   out.webhook = safeWebhook(data.webhook);
-  // On with no address does nothing, so it is not on.
-  out.on = !!data.on && !!out.webhook;
+  // Whether you asked for it, kept apart from whether it can happen yet.
+  // Folding the two together meant that switching it on before pasting the
+  // address recorded "off", and pasting the address afterwards did not put it
+  // back — leaving a switch that looked on and a feature that was not.
+  out.on = !!data.on;
   return out;
+}
+
+/** Both halves: you asked for it, and there is somewhere to send it. */
+function chatIsLive(chat) {
+  return !!chat && !!chat.on && !!safeWebhook(chat.webhook);
 }
 
 /**
@@ -5822,6 +5830,15 @@ class LinknoteSettingTab extends PluginSettingTab {
 
     const chat = this.plugin.chat || { on: false, webhook: '' };
 
+    containerEl.createEl('p', {
+      cls: 'setting-item-description lkn-preview',
+      text: chatIsLive(chat)
+        ? 'Ready: a linknote written by someone else on one of your notes will be posted.'
+        : chat.on
+          ? 'Switched on, but nothing will be sent: there is no webhook address yet.'
+          : 'Switched off. Nothing is sent.',
+    });
+
     new Setting(containerEl)
       .setName('Post to a chat channel')
       .setDesc(
@@ -5832,10 +5849,15 @@ class LinknoteSettingTab extends PluginSettingTab {
       )
       .addToggle((t) =>
         t.setValue(chat.on).onChange((v) => {
-          chat.on = v && !!safeWebhook(chat.webhook);
+          chat.on = v;
           this.plugin.chat = chat;
           this.plugin.saveChatConfig();
-          if (v && !chat.on) new Notice('Linknote: enter an https:// webhook address first.');
+          // Said, not silently corrected: the switch keeps what you set, and
+          // starts working the moment an address is there.
+          if (v && !safeWebhook(chat.webhook)) {
+            new Notice('Linknote: nothing will be sent until an https:// webhook address is set below.');
+          }
+          this.redraw();
         })
       );
 
@@ -5872,7 +5894,6 @@ class LinknoteSettingTab extends PluginSettingTab {
           .setValue(chat.webhook)
           .onChange((v) => {
             chat.webhook = safeWebhook(v);
-            if (!chat.webhook) chat.on = false;
             this.plugin.chat = chat;
             this.plugin.saveChatConfig();
           });
@@ -5957,6 +5978,7 @@ module.exports.readsOnShowing = readsOnShowing;
 module.exports.chatText = chatText;
 module.exports.safeWebhook = safeWebhook;
 module.exports.sanitizeChatConfig = sanitizeChatConfig;
+module.exports.chatIsLive = chatIsLive;
 module.exports.isOwnNote = isOwnNote;
 module.exports.namesOf = namesOf;
 module.exports.rowMatches = rowMatches;

@@ -256,6 +256,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### 0.22.1
+
+- The chat switch no longer records itself as off when turned on before the address is pasted, and the settings screen says whether it is actually ready.
+
 ### 0.22.0
 
 - Optional chat notifications: when someone else annotates a note you wrote, one line can be posted to a WeCom group robot webhook. Counts and authors only. Off by default, desktop only.
