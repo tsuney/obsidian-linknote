@@ -1,8 +1,8 @@
 # Changelog
 
-### 0.22.3
+### 0.22.3 / 0.22.4
 
-- **Notes with no author at all can count as yours**, under a new setting of that name. Most notes in most vaults carry no author property — in one vault of two and a half thousand notes, nine in ten of them — so without this the chat message only ever fires on the few that are signed. It is off by default all the same: an unsigned note says nothing about whose it is, and in a vault several people fill, claiming them all would put their notes in your channel. Your own annotations on such a note are still not announced to you.
+- **Notes with no author at all count as yours**, under a new setting of that name. Most notes in most vaults carry no author property — in one vault of two and a half thousand notes, nine in ten of them — so without this the chat message would only ever fire on the few that are signed. It ships on for that reason, and can be turned off in a vault several people write into, where an unsigned note is as likely to be theirs as yours. Your own annotations on such a note are still not announced to you.
 - **Your names in note properties** is plural, and always was: give as many names as you answer to, separated by commas. The wording said "name", which read as though only one was allowed.
 
 ### 0.22.2

@@ -1376,8 +1376,8 @@ console.log('\nchat notifications — whose annotation is it');
   check('a name I did not claim does not', !chatWorthy('常山宏彰', 'Panyin', ['Tsuneyama']));
 
   // A note naming nobody: a guess either way, so it is asked, not assumed.
-  check('an unsigned note is not mine by default', !chatWorthy('', 'Panyin', ME));
-  check('unless I say unsigned notes are mine', chatWorthy('', 'Panyin', ME, true));
+  check('an unsigned note is nobody’s unless asked for', !chatWorthy('', 'Panyin', ME));
+  check('asked for, it is mine — which is how the setting ships', chatWorthy('', 'Panyin', ME, true));
   check('and even then my own writing on one is not news', !chatWorthy('', 'Tsune', ME, true));
   check('nor from the name my notes use', !chatWorthy('', 'Tsuneyama', ME, true));
   check('and with no name of my own, nothing is told', !chatWorthy(NOTE, 'Panyin', []));

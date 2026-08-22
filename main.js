@@ -177,7 +177,7 @@ const DEFAULT_SETTINGS = {
   listScope: 'note',
   readOn: 'open',
   noteAuthor: '',
-  unsignedIsMine: false,
+  unsignedIsMine: true,
 };
 
 /*
@@ -4487,6 +4487,9 @@ function chatWorthy(noteAuthorText, linknoteAuthor, myNames, unsignedIsMine) {
   // that puts other people's notes in your channel. Which is true is not
   // something the plugin can see, so it is asked rather than assumed.
   if (!noteAuthors.length) {
+    // Asked for explicitly by the caller. The setting behind it ships on,
+    // because a vault where nothing is signed would otherwise never fire;
+    // this function makes no assumption of its own.
     if (!unsignedIsMine) return false;
   } else if (!noteAuthors.some((name) => mine.indexOf(name) !== -1)) {
     return false;
@@ -5930,11 +5933,11 @@ class LinknoteSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Notes with no author are yours')
       .setDesc(
-        'Most notes in most vaults carry no author property at all. With this on, such a note counts ' +
-          'as yours and annotations on it are posted. That is right in a vault you wrote nearly all ' +
-          'of, and wrong in one several people fill, where it would put their notes in your channel. ' +
-          'Off by default, because an unsigned note says nothing about whose it is, and claiming it ' +
-          'is a guess.'
+        'Most notes in most vaults carry no author property at all, so this is on: without it the ' +
+          'message would only ever fire on the few notes that happen to be signed. Turn it off in a ' +
+          'vault several people write into, where an unsigned note is as likely to be theirs as ' +
+          'yours and you would be told about annotations on notes you never wrote. Either way, your ' +
+          'own annotations are never announced to you.'
       )
       .addToggle((t) =>
         t.setValue(s.unsignedIsMine).onChange(async (v) => {
