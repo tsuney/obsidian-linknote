@@ -179,6 +179,7 @@ const DEFAULT_SETTINGS = {
   noteAuthor: '',
   unsignedIsMine: true,
   chatScope: 'mine',
+  mentionMap: '',
 };
 
 /*
@@ -4032,7 +4033,8 @@ class LinknotePlugin extends Plugin {
     const url = safeWebhook(this.chat.webhook);
     const content = chatText(changes);
     if (!url || !content) return;
-    const failed = await this.sendChat(url, content);
+    const who = mentionsFor(changes, parseMentionMap(this.settings.mentionMap));
+    const failed = await this.sendChat(url, content, who);
     if (failed) new Notice('Linknote: the chat message was not sent — ' + failed);
   }
 
@@ -4042,13 +4044,23 @@ class LinknotePlugin extends Plugin {
    * WeCom answers 200 with an error code in the body, so the body is checked
    * as well as the status; otherwise a wrong key looks like a success.
    */
-  async sendChat(url, content) {
+  async sendChat(url, content, who) {
+    const mentions = who || { ids: [], mobiles: [] };
     try {
+      // text rather than markdown: markdown carries no mentions, and there is
+      // nothing here that markdown would render anyway.
       const res = await requestUrl({
         url,
         method: 'POST',
         contentType: 'application/json',
-        body: JSON.stringify({ msgtype: 'markdown', markdown: { content } }),
+        body: JSON.stringify({
+          msgtype: 'text',
+          text: {
+            content,
+            mentioned_list: mentions.ids || [],
+            mentioned_mobile_list: mentions.mobiles || [],
+          },
+        }),
         throw: false,
       });
       if (res.status < 200 || res.status >= 300) return 'HTTP ' + res.status;
@@ -4639,6 +4651,53 @@ function chatText(changes) {
 
   const n = list.length;
   return 'Linknote — ' + n + (n === 1 ? ' linknote' : ' linknotes') + '\n' + lines.join('\n');
+}
+
+/**
+ * Who to @ in a chat message, read from a directory the user writes out:
+ * `Tsuneyama=tsuneyama, 潘寅=panyin`. The left side is the name a note signs
+ * itself with; the right side is what the chat service calls that person.
+ *
+ * The two are never the same thing — a vault knows people by whatever its
+ * notes call them, and a chat service by an account — and nothing can derive
+ * one from the other, so it is written down or there are no mentions.
+ */
+function parseMentionMap(text) {
+  const out = new Map();
+  for (const entry of String(text == null ? '' : text).split(',')) {
+    const at = entry.indexOf('=');
+    if (at === -1) continue;
+    const name = entry.slice(0, at).trim();
+    const id = entry.slice(at + 1).trim();
+    if (name && id) out.set(name, id);
+  }
+  return out;
+}
+
+/**
+ * The mentions for one message: everyone whose notes were annotated and who
+ * the directory knows about.
+ *
+ * A value of digits is taken for a phone number and goes in the mobile list,
+ * anything else for an account name. WeCom accepts either, and which one a
+ * person has to hand differs, so both are allowed rather than asked about.
+ * Nobody is mentioned twice however many linknotes they collected.
+ */
+function mentionsFor(changes, map) {
+  const ids = [];
+  const mobiles = [];
+  const seen = new Set();
+  if (!map || !map.get) return { ids, mobiles };
+  for (const change of changes || []) {
+    for (const name of namesOf(change && change.noteAuthor)) {
+      const who = map.get(name);
+      if (!who || seen.has(who)) continue;
+      seen.add(who);
+      if (/^\+?[0-9][0-9-]*$/.test(who)) mobiles.push(who);
+      else ids.push(who);
+    }
+  }
+  return { ids, mobiles };
 }
 
 /** The unread count as it is drawn on the ribbon; nothing at all when zero. */
@@ -6005,6 +6064,27 @@ class LinknoteSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Who to @ in the message')
+      .setDesc(
+        'A directory, written as name=account pairs separated by commas — for example: ' +
+          'Tsuneyama=tsuneyama, 潘寅=panyin. The left side is the name a note signs itself with; ' +
+          'the right side is the WeCom account (or a phone number, if that is what you have to ' +
+          'hand). Whoever wrote the annotated note is mentioned, so the message reaches their ' +
+          'phone rather than sitting in a channel. A name that is not listed is simply not ' +
+          'mentioned. Nothing can work this out on its own: a vault knows people by what its notes ' +
+          'call them, and a chat service by an account.'
+      )
+      .addText((t) => {
+        t.setPlaceholder('Tsuneyama=tsuneyama, 潘寅=panyin')
+          .setValue(s.mentionMap)
+          .onChange(async (v) => {
+            s.mentionMap = v.trim();
+            await this.plugin.saveSettings();
+          });
+        t.inputEl.addClass('lkn-wide-input');
+      });
+
+    new Setting(containerEl)
       .setName('Webhook address')
       .setDesc(
         'A WeCom (企业微信) group robot address, or anything else that accepts the same JSON. HTTPS ' +
@@ -6044,11 +6124,13 @@ class LinknoteSettingTab extends PluginSettingTab {
             return;
           }
           b.setDisabled(true);
+          const sample = [
+            { author: s.author || '(no author)', kind: 'new', noteAuthor: s.noteAuthor || s.author },
+          ];
           const failed = await this.plugin.sendChat(
             url,
-            chatText([
-              { author: s.author || '(no author)', kind: 'new', noteAuthor: s.noteAuthor || s.author },
-            ]) + '\n(test)'
+            chatText(sample) + '\n(test)',
+            mentionsFor(sample, parseMentionMap(s.mentionMap))
           );
           b.setDisabled(false);
           new Notice(
@@ -6107,6 +6189,8 @@ module.exports.sanitizeChatConfig = sanitizeChatConfig;
 module.exports.chatIsLive = chatIsLive;
 module.exports.isOwnNote = isOwnNote;
 module.exports.chatWorthy = chatWorthy;
+module.exports.parseMentionMap = parseMentionMap;
+module.exports.mentionsFor = mentionsFor;
 module.exports.namesOf = namesOf;
 module.exports.rowMatches = rowMatches;
 module.exports.sortRows = sortRows;

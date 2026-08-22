@@ -211,6 +211,7 @@ Linknote does nothing about conflicts. Two people editing one source note at the
 | Open the linknote after creating it | off | opens in a split, once the block reference resolves |
 | Notify when linknotes change | on | one notice per burst of other people's additions and edits; unread dots stay either way |
 | Count a linknote as read | When you say so | the tick on a card or row, or opening the linknote; *When it is shown* clears it as a card or row draws it |
+| Who to @ in the message | empty | `name=account` pairs, comma separated, mapping note authors to chat accounts; digits are read as a phone number |
 | Which notes to be told about | Notes I wrote | your own notes, or every note in the vault; your own linknotes are never announced either way |
 | Your names in note properties | empty | the names a note of yours signs itself with, which are often not the per-device Author; comma-separated for several. Empty means use Author |
 | Notes with no author are yours | on | counts an unsigned note as yours for the chat message. Turn it off in a vault several people write into |
@@ -257,6 +258,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 ## Changelog
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
+
+### 0.22.7
+
+- Whoever wrote the annotated note is @-mentioned, from a `name=account` directory you supply.
 
 ### 0.22.6
 

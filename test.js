@@ -1348,6 +1348,40 @@ console.log('\nchat notifications — what may leave the vault');
   eq('an address with a space inside is refused', safeWebhook('https://a.example/h k'), '');
 }
 
+console.log('\nchat notifications — who gets an @');
+{
+  const { parseMentionMap, mentionsFor } = m;
+
+  const map = parseMentionMap('Tsuneyama=tsuneyama, 潘寅=panyin, 山口亜土=13800001111');
+  eq('three people are read', map.size, 3);
+  eq('a name maps to an account', map.get('Tsuneyama'), 'tsuneyama');
+  eq('spacing around either side is trimmed', map.get('潘寅'), 'panyin');
+
+  const broken = parseMentionMap('no equals sign, =missing name, missing account=, , ');
+  eq('entries that name nobody are dropped', broken.size, 0);
+  eq('nothing at all is an empty directory', parseMentionMap('').size, 0);
+  eq('and so is nothing', parseMentionMap(null).size, 0);
+
+  const one = mentionsFor([{ noteAuthor: 'Tsuneyama' }], map);
+  eq('an account goes in the account list', one.ids.join(','), 'tsuneyama');
+  eq('and nowhere else', one.mobiles.length, 0);
+
+  const phone = mentionsFor([{ noteAuthor: '山口亜土' }], map);
+  eq('digits are taken for a phone number', phone.mobiles.join(','), '13800001111');
+  eq('and not for an account', phone.ids.length, 0);
+
+  const both = mentionsFor(
+    [{ noteAuthor: 'Tsuneyama, 潘寅' }, { noteAuthor: 'Tsuneyama' }],
+    map
+  );
+  eq('a note with two authors mentions both', both.ids.join(','), 'tsuneyama,panyin');
+  eq('and nobody twice, however many linknotes', both.ids.length, 2);
+
+  const unknown = mentionsFor([{ noteAuthor: 'Someone Else' }], map);
+  eq('a name the directory does not know is not mentioned', unknown.ids.length, 0);
+  eq('an empty directory mentions nobody', mentionsFor([{ noteAuthor: 'Tsuneyama' }], new Map()).ids.length, 0);
+}
+
 console.log('\nchat notifications — whose note is it');
 {
   const { isOwnNote, namesOf } = m;

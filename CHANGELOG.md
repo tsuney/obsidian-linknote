@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.22.7
+
+- **Whoever wrote the annotated note is @-mentioned**, so the message reaches their phone rather than sitting in a channel. A new setting, **Who to @ in the message**, holds a small directory written as `Tsuneyama=tsuneyama, 潘寅=panyin`: the name a note signs itself with on the left, the chat account on the right. Nothing can work that out on its own — a vault knows people by what its notes call them, a chat service by an account — so a name that is not listed is simply not mentioned. A value of digits is taken for a phone number instead of an account.
+- Messages are sent as **text** rather than markdown, because markdown carries no mentions and there was nothing here that markdown was rendering.
+
 ### 0.22.6
 
 - **The chat message says whose notes were annotated, as well as by whom.** One line per pair — *Yamada → Tsuneyama's notes: 2* — which is what makes it possible to decide whether to look now or later. Both halves are people's names: still no note name and still none of the text, so nothing about what was said leaves the vault. A note signed by nobody is listed as *unsigned notes*. Long lists stop at eight lines and sum up the rest, because a message that scrolls is not read.
