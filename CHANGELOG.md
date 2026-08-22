@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.22.2
+
+- **A name the note itself lists is one of its authors, whichever device it came from.** A chat message is now skipped when the linknote's author appears among the source note's own authors — that is an author annotating their own note, not news. Until now the linknote was compared only against the Author of *this* device, which is per device by design, so a note signed `Tsuneyama, Tsune` annotated under the name `Tsuneyama` was announced back to the person who wrote both. A note declares who it belongs to; that declaration is now what decides.
+- One consequence worth knowing: on a note you wrote **with** someone, that person's annotations are no longer announced, because they are one of its authors. A fourth person annotating the same note still is.
+
 ### 0.22.1
 
 - **The chat switch no longer lies.** Switching it on before pasting the webhook address recorded it as off — the switch and the address were folded into one flag — and pasting the address afterwards did not put it back. The result was a switch that looked on, a test button that worked, and nothing ever sent. Asking for it and being able to do it are now two separate things, and the settings screen says plainly which state it is in: *Ready*, *Switched on, but nothing will be sent: there is no webhook address yet*, or *Switched off*.

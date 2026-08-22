@@ -256,6 +256,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### 0.22.2
+
+- A chat message is skipped when the linknote's author is one of the source note's own authors — an author annotating their own note is not news, whichever device it came from.
+
 ### 0.22.1
 
 - The chat switch no longer records itself as off when turned on before the address is pasted, and the settings screen says whether it is actually ready.

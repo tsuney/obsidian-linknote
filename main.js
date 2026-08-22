@@ -3963,7 +3963,7 @@ class LinknotePlugin extends Plugin {
       // A chat message is only for what lands on a note of your own. The
       // in-app notice covers everything; this one is the tap on the shoulder
       // that reaches you when Obsidian is not what you are looking at.
-      if (this.isOnMyNote(file)) mine.push(change);
+      if (this.isOnMyNote(file, author)) mine.push(change);
     }
 
     if (!changes.length) return;
@@ -3980,7 +3980,7 @@ class LinknotePlugin extends Plugin {
    * `source` property, resolved by the metadata cache — a name in a wikilink
    * is not a path, and only Obsidian knows which note it means.
    */
-  isOnMyNote(linknote) {
+  isOnMyNote(linknote, linknoteAuthor) {
     try {
       const { source } = this.sourceOfLinknote(linknote);
       if (!source) return false;
@@ -3988,7 +3988,8 @@ class LinknotePlugin extends Plugin {
       // The name your notes call you by, which is not always the name your
       // linknotes are signed with. Falls back to the Author when unset.
       const names = namesOf(this.settings.noteAuthor || this.settings.author);
-      return isOwnNote(authorOf(fm), names);
+      names.push.apply(names, namesOf(this.settings.author));
+      return chatWorthy(authorOf(fm), linknoteAuthor, names);
     } catch (e) {
       return false;
     }
@@ -4452,6 +4453,38 @@ function isOwnNote(noteAuthor, names) {
   const listed = namesOf(noteAuthor);
   if (!listed.length || !names.length) return false;
   return names.some((mine) => listed.indexOf(mine) !== -1);
+}
+
+/**
+ * Is this linknote worth telling a chat channel about?
+ *
+ * Two conditions, both read from author properties. The note has to be one of
+ * mine — my name among the names it lists. And the linknote has to be
+ * somebody else's, where "somebody else" means: **not one of that note's own
+ * authors**, and not one of my names.
+ *
+ * The first version of this compared the linknote only against the Author of
+ * this device, which is per device by design — so a linknote written on my
+ * own phone, or under the name my notes are signed with, read as a stranger's
+ * and was announced to me as news about my own writing. A note says who it
+ * belongs to; anyone it names annotating it is an author annotating their own
+ * note, whichever device they used.
+ *
+ * A linknote signed by nobody is treated as somebody else's. It is more
+ * useful to be told about an unsigned annotation than to have it swallowed.
+ */
+function chatWorthy(noteAuthorText, linknoteAuthor, myNames) {
+  const noteAuthors = namesOf(noteAuthorText);
+  const mine = namesOf(myNames.join ? myNames.join(',') : myNames);
+  if (!noteAuthors.length || !mine.length) return false;
+  // Mine to be told about.
+  if (!noteAuthors.some((name) => mine.indexOf(name) !== -1)) return false;
+  // Somebody else's to have written.
+  const who = String(linknoteAuthor == null ? '' : linknoteAuthor).trim();
+  if (!who) return true;
+  if (noteAuthors.indexOf(who) !== -1) return false;
+  if (mine.indexOf(who) !== -1) return false;
+  return true;
 }
 
 /**
@@ -5980,6 +6013,7 @@ module.exports.safeWebhook = safeWebhook;
 module.exports.sanitizeChatConfig = sanitizeChatConfig;
 module.exports.chatIsLive = chatIsLive;
 module.exports.isOwnNote = isOwnNote;
+module.exports.chatWorthy = chatWorthy;
 module.exports.namesOf = namesOf;
 module.exports.rowMatches = rowMatches;
 module.exports.sortRows = sortRows;

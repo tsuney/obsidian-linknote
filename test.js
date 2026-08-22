@@ -1348,6 +1348,38 @@ console.log('\nchat notifications — whose note is it');
   eq('nothing is not a name', namesOf(null).length, 0);
 }
 
+console.log('\nchat notifications — whose annotation is it');
+{
+  const { chatWorthy } = m;
+  // The real note: signed by one person under two names.
+  const NOTE = 'Tsuneyama, Tsune';
+  const ME = ['Tsuneyama', 'Tsune'];
+
+  check('a colleague annotating my note is told', chatWorthy(NOTE, 'Panyin', ME));
+  check('another of my own devices is told', chatWorthy(NOTE, 'Tsuney_iPhone', ME));
+
+  // The rule this version is about: any name the note itself lists is one of
+  // its authors annotating their own note, whichever device they used.
+  check('a name the note lists is not told — I annotated my own note', !chatWorthy(NOTE, 'Tsune', ME));
+  check('the other name it lists, likewise', !chatWorthy(NOTE, 'Tsuneyama', ME));
+
+  // A note that does not happen to list my device name still must not
+  // announce my own desk to me.
+  check('my device name is mine even when the note omits it', !chatWorthy('Tsuneyama', 'Tsune', ME));
+
+  check('a note that is not mine is never told', !chatWorthy('Panyin, Ado', 'Yamada', ME));
+  check('nor one naming nobody', !chatWorthy('', 'Panyin', ME));
+  check('and with no name of my own, nothing is told', !chatWorthy(NOTE, 'Panyin', []));
+
+  // Better to hear about an unsigned annotation than to swallow it.
+  check('an unsigned linknote is told', chatWorthy(NOTE, '', ME));
+
+  // A note written with a colleague: they are one of its authors, so their
+  // annotation is not news. Reverse this if it should be.
+  check('a co-author annotating our shared note is not told', !chatWorthy('Tsuneyama, Panyin', 'Panyin', ME));
+  check('but a fourth person on that note is', chatWorthy('Tsuneyama, Panyin', 'Ado', ME));
+}
+
 console.log('\nchat notifications — the address is this device’s alone');
 {
   const { sanitizeChatConfig, sanitizeSettings } = m;
