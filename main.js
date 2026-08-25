@@ -181,7 +181,7 @@ const DEFAULT_SETTINGS = {
   chatScope: 'mine',
   mentionAll: false,
   mentionMap: '',
-  printCards: 'inline',
+  printCards: 'margin',
 };
 
 /*
@@ -3102,7 +3102,10 @@ class LinknotePlugin extends Plugin {
       body.classList.toggle('lkn-plain-marker', s.markerStyle === 'plain');
       body.classList.toggle('lkn-rule-anchored', !!s.highlightAnchored);
       body.classList.toggle('lkn-cards-collapsed', !!s.cardsCollapsed);
-      body.classList.toggle('lkn-print-plain', printsPlain(s));
+      const print = printMode(s);
+      body.classList.toggle('lkn-print-margin', print === 'margin');
+      body.classList.toggle('lkn-print-inline', print === 'inline');
+      body.classList.toggle('lkn-print-plain', print === 'off');
     }
   }
 
@@ -4621,15 +4624,16 @@ function readsOnShowing(settings) {
 }
 
 /**
- * Whether an exported PDF leaves the cards out.
+ * How an exported PDF carries the cards: 'margin', 'inline' or 'off'.
  *
- * Only the explicit choice counts; anything unrecognised, missing, or left
- * over from an older version prints the cards. A document that quietly loses
- * the annotations is worse than one that carries more than you wanted, because
- * only one of the two is visible in the result.
+ * Anything unrecognised, missing, or left over from an older version prints
+ * them in the margin, which is where they are on screen. A PDF that quietly
+ * lost the annotations is worse than one carrying more than you wanted,
+ * because only one of the two is visible in the result.
  */
-function printsPlain(settings) {
-  return !!settings && settings.printCards === 'off';
+function printMode(settings) {
+  const mode = settings && settings.printCards;
+  return mode === 'inline' || mode === 'off' ? mode : 'margin';
 }
 
 /**
@@ -5784,14 +5788,17 @@ class LinknoteSettingTab extends PluginSettingTab {
       new Setting(containerEl)
         .setName('Cards in an exported PDF')
         .setDesc(
-          'A printed page is a different width and is cut into sheets, so a card cannot stay in ' +
-            'the margin beside its passage — it is printed under the block instead, in full. The ' +
-            'six-line limit is dropped as well: on screen it is a scrollbar, on paper it would ' +
-            'simply delete the rest of the note. Choose Leave them out for a clean copy of the ' +
-            'document as written; the annotations stay in the vault either way.'
+          'Cards keep the margin on paper, in a gutter measured as a share of the page rather ' +
+            'than of the pane you happened to read in. Under the block suits notes whose cards ' +
+            'are long, where a narrow column would run them far down the page from what they ' +
+            'annotate. Either way a card prints in full: the six-line limit is a scrollbar on ' +
+            'screen and would be a deletion on paper. Stowing the cards leaves them out of the ' +
+            'export as well, whichever is chosen — this setting is for when that should be so ' +
+            'every time.'
         )
         .addDropdown((d) => {
-          d.addOption('inline', 'Print them under the block');
+          d.addOption('margin', 'Beside the block, as on screen');
+          d.addOption('inline', 'Under the block');
           d.addOption('off', 'Leave them out');
           d.setValue(s.printCards || DEFAULT_SETTINGS.printCards);
           d.onChange(async (v) => {
@@ -6249,7 +6256,7 @@ module.exports.sanitizeSeenState = sanitizeSeenState;
 module.exports.headSlot = headSlot;
 module.exports.badgeText = badgeText;
 module.exports.readsOnShowing = readsOnShowing;
-module.exports.printsPlain = printsPlain;
+module.exports.printMode = printMode;
 module.exports.chatText = chatText;
 module.exports.safeWebhook = safeWebhook;
 module.exports.sanitizeChatConfig = sanitizeChatConfig;

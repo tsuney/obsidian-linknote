@@ -205,7 +205,7 @@ Linknote does nothing about conflicts. Two people editing one source note at the
 | Custom card text color | — | shown only while Card text color is Custom |
 | Start with cards stowed | off | stowed cards are thin strips beside their passages |
 | Card placement | In the margin | a narrow pane falls back to inline either way; on mobile no cards are drawn at all |
-| Cards in an exported PDF | Print them under the block | printed in full — the line limit is a scrollbar on screen and would be a deletion on paper. *Leave them out* for a clean copy of the document as written |
+| Cards in an exported PDF | Beside the block, as on screen | a gutter measured as a share of the page. *Under the block* suits long cards; *Leave them out* for a clean copy. Printed in full either way — the line limit is a scrollbar on screen and would be a deletion on paper. Stowed cards are never printed |
 | Body heading | `Linknote` | the heading marking your own note inside a linknote |
 | Keep the body property in step with the note | on | the note wins; an edit made to the property is overwritten |
 | Show the Linknote button when text is selected | on | turn off for hotkey-only use |
@@ -261,9 +261,13 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### 0.23.1
+
+- Cards keep the margin when exported to PDF, in a gutter measured as a share of the page. Stowed cards are not printed.
+
 ### 0.23.0
 
-- Cards print properly: exporting to PDF piled them on top of one another. Printing now drops the margin positioning and puts each card under its own block, in full.
+- Cards print properly: exporting to PDF piled them on top of one another. Printing now drops the measured offsets, which a different page size invalidates.
 
 ### 0.22.8
 

@@ -1,5 +1,11 @@
 # Changelog
 
+### 0.23.1
+
+- **Cards keep the margin on paper.** 0.23.0 fixed the overlapping by putting every card under its block, which threw away the thing that makes a margin note a margin note. The offsets were the problem, not the margin: a stack now becomes a right float in a gutter reserved on the page, so it sits beside its passage as it does on screen. A float paginates, and `clear: right` is what keeps two stacks apart — the collision the on-screen code solves by measuring, solved here by the layout itself, which needs no numbers that a different page size would invalidate. The gutter is a share of the page rather than a pixel count, so it follows the paper and its margins instead of the pane the note happened to be read in.
+- **Stowed cards are not printed.** Stowing them is the reader saying *not now*, and a strip carries nothing on paper. A note read with the cards stowed now exports as the document without them — which is also the quickest way to get a clean copy, without going near the settings.
+- **Cards in an exported PDF** gains *Beside the block, as on screen*, and ships that way. *Under the block* remains for notes whose cards are long enough that a narrow column would run them far down the page from what they annotate.
+
 ### 0.23.0
 
 - **Cards print properly.** Exporting a note to PDF piled the cards on top of one another, or pushed them off the sheet entirely. On screen a card is positioned in the margin beside its passage, at an offset that JavaScript works out by measuring the rendered page; a printed page is a different width and is cut into sheets, so every one of those measurements is wrong, and an absolutely positioned box does not paginate — it keeps its offset and lands wherever that falls. Printing now abandons the positioning rather than trying to correct it: each card falls into the flow directly under its own block, which is the shape a narrow pane has always used.

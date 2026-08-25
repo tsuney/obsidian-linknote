@@ -1000,87 +1000,41 @@ body.is-mobile .lkn-sheet {
   min-width: 220px;
 }
 
+
 /*
  * Linknote — printing, and Obsidian's "Export to PDF…".
  *
  * On screen a stack is absolutely positioned against its block, and JavaScript
- * measures the rendered page to decide how far each one has to move to clear
- * the one above it. A printed page is a different page: it is a different
- * width, and it is cut into sheets. Both of those invalidate every number that
- * measurement produced, and absolutely positioned boxes do not paginate — they
- * keep their offsets and land on top of each other.
+ * measures the rendered page to decide how far each one must move to clear the
+ * one above it. A printed page is a different page: a different width, cut
+ * into sheets. Every number that measurement produced is void, and absolutely
+ * positioned boxes do not paginate — they keep their offsets and land on top
+ * of one another.
  *
- * So nothing is repositioned for print; the positioning is abandoned. Each
- * stack falls back into the flow directly after its own block, which is the
- * same shape the narrow-pane fallback already takes. Paper has no margin to
- * spare and no scrollbars, and the reader cannot widen it.
+ * So the offsets are abandoned, but not the margin: the stack becomes a right
+ * float with a negative right margin, sitting in a gutter reserved on the
+ * sizer. A float paginates, and `clear: right` keeps two stacks off each other
+ * — the collision the JavaScript solves by measuring, solved here by the
+ * layout itself, which needs no numbers.
  *
  * !important throughout, because what is being overridden is the inline style
- * left behind by the on-screen measurement.
+ * the on-screen measurement left behind.
  */
 @media print {
-  /* The gutter existed to hold the cards. Nothing is beside the text now. */
-  .markdown-preview-view.lkn-cards,
-  body.lkn-cards-collapsed .markdown-preview-view.lkn-cards {
+  /* The screen gutter is a pixel count for a pane that is not this page. */
+  .markdown-preview-view.lkn-cards {
     padding-right: 0 !important;
   }
 
-  .markdown-preview-view.lkn-cards .markdown-preview-sizer {
-    margin-left: auto !important;
-    margin-right: auto !important;
-  }
-
-  /* Into the flow, under the block it belongs to. */
-  .markdown-preview-view .lkn-card-stack,
-  .markdown-rendered .lkn-card-stack,
-  body.lkn-cards-collapsed .markdown-preview-view .lkn-card-stack,
-  body.lkn-cards-collapsed .markdown-rendered .lkn-card-stack {
-    position: static !important;
-    top: auto !important;
-    left: auto !important;
-    width: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    margin: 8px 0 12px !important;
-    padding-left: 10px !important;
-    border-left: 2px solid var(--interactive-accent) !important;
-  }
-
-  /*
-   * The line tracing how far a stack was pushed. It measured a distance that
-   * no longer exists.
-   */
+  /* It traced a distance that no longer exists. */
   .markdown-preview-view .lkn-has-card::after,
   .markdown-rendered .lkn-has-card::after {
     display: none !important;
   }
 
   /*
-   * Stowed is a reading state, not a property of the note. A strip carries
-   * nothing, and on paper there is nothing to click to bring it back.
-   */
-  body.lkn-cards-collapsed .lkn-card > * {
-    display: revert !important;
-  }
-
-  body.lkn-cards-collapsed .markdown-preview-view .lkn-card-stack .lkn-card,
-  body.lkn-cards-collapsed .markdown-rendered .lkn-card-stack .lkn-card,
-  body.lkn-cards-collapsed .lkn-card-stack.lkn-card-inline .lkn-card {
-    display: block !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: 0 !important;
-    margin: 0 !important;
-    padding: 8px 10px !important;
-    border: 1px solid var(--background-modifier-border) !important;
-    border-radius: var(--radius-m) !important;
-    background-color: transparent !important;
-    opacity: 1 !important;
-  }
-
-  /*
-   * The six-line limit is a scrollbar in disguise. Paper cannot scroll, so
-   * the limit would not shorten the note — it would delete the rest of it.
+   * The line limit is a scrollbar in disguise. Paper cannot scroll, so it
+   * would not shorten the note — it would delete the rest of it.
    */
   .lkn-card .lkn-card-body {
     max-height: none !important;
@@ -1088,9 +1042,9 @@ body.is-mobile .lkn-sheet {
   }
 
   /*
-   * A card is kept whole where it fits. Where it does not, the browser breaks
-   * it anyway rather than overflow the sheet, which is the outcome we want for
-   * the occasional very long note: split across two pages, never truncated.
+   * Kept whole where it fits. Where it does not, the browser breaks it rather
+   * than overflow the sheet, which is what a very long note should do: split
+   * across two pages, never truncated.
    */
   .lkn-card {
     break-inside: avoid;
@@ -1114,8 +1068,65 @@ body.is-mobile .lkn-sheet {
     border-color: var(--background-modifier-border) !important;
   }
 
-  /* For a clean document: the note as written, without the annotations. */
+  /*
+   * Not printed. Stowing the cards is the reader saying "not now", and a strip
+   * carries nothing on paper — so a note read with the cards stowed exports as
+   * the document without them, and the setting is there for when that should
+   * be the case every time.
+   */
+  body.lkn-cards-collapsed .lkn-card-stack,
   body.lkn-print-plain .lkn-card-stack {
     display: none !important;
+  }
+
+  /*
+   * In the margin. The gutter is a proportion rather than a pixel count, so it
+   * follows the paper and the page margins instead of the pane the note
+   * happened to be read in.
+   */
+  body.lkn-print-margin:not(.lkn-cards-collapsed) .markdown-preview-sizer:has(.lkn-card-stack),
+  body.lkn-print-margin:not(.lkn-cards-collapsed) .markdown-rendered:has(.lkn-card-stack) {
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-right: 36% !important;
+  }
+
+  body.lkn-print-margin .markdown-preview-view .lkn-card-stack,
+  body.lkn-print-margin .markdown-rendered .lkn-card-stack {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    float: right !important;
+    /* Two stacks near each other queue down the gutter instead of colliding. */
+    clear: right !important;
+    width: 30% !important;
+    /*
+     * Wider than the card by the gap we want beside the text: the float's
+     * margin box ends at the text column, so the card itself lands past it.
+     */
+    margin: 0 -34% 10px 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding-left: 8px !important;
+    border-left: 2px solid var(--interactive-accent) !important;
+  }
+
+  /*
+   * Under the block. For notes whose cards are long enough that a narrow
+   * column would run them down the page far from what they annotate.
+   */
+  body.lkn-print-inline .markdown-preview-view .lkn-card-stack,
+  body.lkn-print-inline .markdown-rendered .lkn-card-stack {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    float: none !important;
+    width: auto !important;
+    margin: 8px 0 12px !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding-left: 10px !important;
+    border-left: 2px solid var(--interactive-accent) !important;
   }
 }

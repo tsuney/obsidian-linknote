@@ -209,7 +209,7 @@ body: {{bodyYaml}}
 | Custom card text color | — | Card text color が Custom のときだけ出ます |
 | Start with cards stowed | オフ | 格納したカードは対象箇所の横の細い帯です |
 | Card placement | In the margin | ペインが狭ければどちらでもインラインになります。モバイルではカードを描きません |
-| Cards in an exported PDF | Print them under the block | PDF では、カードは該当ブロックの下に**全文**で印刷されます（画面上の行数制限はスクロールバーの代わりであり、紙では削除になってしまうため）。注釈の無い文書が欲しいときは *Leave them out* |
+| Cards in an exported PDF | Beside the block, as on screen | PDF でも**画面と同じく余白に**カードが出ます。余白の幅はページに対する割合で決まるため、用紙とページ余白に追随します。カードが長い場合は *Under the block*、注釈の無い文書が欲しいときは *Leave them out*。いずれも**全文**で印刷されます（画面上の行数制限はスクロールバーの代わりであり、紙では削除になってしまうため）。**カードをたたんだ状態では印刷されません** |
 | Body heading | `Linknote` | 補足ノートの中で、自分の書いた部分を示す見出し |
 | Keep the body property in step with the note | オン | ノートが勝ちます。プロパティへの編集は上書きされます |
 | Show the Linknote button when text is selected | オン | ホットキーだけで使うならオフに |
