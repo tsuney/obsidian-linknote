@@ -1535,6 +1535,18 @@ console.log('\nthe inbox — when a linknote counts as read');
   check('no settings at all decides nothing', !readsOnShowing(null));
 }
 
+console.log('\ncards on paper — whether an exported PDF carries them');
+{
+  const { printsPlain } = m;
+  // The failure to guard against is a document that quietly lost the
+  // annotations, so everything except the explicit choice prints them.
+  check('by default they are printed', !printsPlain({ printCards: 'inline' }));
+  check('a vault saved before this setting existed prints them', !printsPlain({}));
+  check('so does a value nobody recognises', !printsPlain({ printCards: 'sideways' }));
+  check('so do no settings at all', !printsPlain(null));
+  check('only "off" leaves them out', printsPlain({ printCards: 'off' }));
+}
+
 console.log('\nthe inbox — the count on the ribbon');
 {
   const { badgeText } = m;

@@ -1,5 +1,11 @@
 # Changelog
 
+### 0.23.0
+
+- **Cards print properly.** Exporting a note to PDF piled the cards on top of one another, or pushed them off the sheet entirely. On screen a card is positioned in the margin beside its passage, at an offset that JavaScript works out by measuring the rendered page; a printed page is a different width and is cut into sheets, so every one of those measurements is wrong, and an absolutely positioned box does not paginate — it keeps its offset and lands wherever that falls. Printing now abandons the positioning rather than trying to correct it: each card falls into the flow directly under its own block, which is the shape a narrow pane has always used.
+- **A card prints in full.** The six-line limit is a scrollbar on screen and would be a deletion on paper, so it is dropped for printing. A card is kept whole on one sheet where it fits and split across two where it does not — never truncated. The tick, stow and remove buttons are left out, as is the unread marking, which is this device's state and says nothing about the document. Cards left stowed print in full: stowing is a reading state, and on paper there is nothing to click to bring them back.
+- **Cards in an exported PDF**, a new setting, prints them under the block (the default) or leaves them out for a clean copy of the document as written. Anything the setting has never been given — a vault saved before this version, an unrecognised value — prints them: a PDF that quietly lost the annotations is worse than one carrying more than you wanted, because only one of the two is visible in the result.
+
 ### 0.22.8
 
 - **Mention everyone in the thread** — one switch that reaches your phone without a directory. The mentions added in 0.22.7 turned out to be unusable as posted: WeCom will only @ someone by the 帐号 (UserID) it issued, a string no note carries and nobody knows offhand, and it accepts a wrong one with a 200 and quietly omits the @ — so the failure looks exactly like success. `@all` needs nothing written down, and in the thread this feature is meant for there is only one person in it anyway. Off by default; the directory is what a shared group still uses, and is ignored while this is on.

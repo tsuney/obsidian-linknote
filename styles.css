@@ -999,3 +999,123 @@ body.is-mobile .lkn-sheet {
   width: 100%;
   min-width: 220px;
 }
+
+/*
+ * Linknote — printing, and Obsidian's "Export to PDF…".
+ *
+ * On screen a stack is absolutely positioned against its block, and JavaScript
+ * measures the rendered page to decide how far each one has to move to clear
+ * the one above it. A printed page is a different page: it is a different
+ * width, and it is cut into sheets. Both of those invalidate every number that
+ * measurement produced, and absolutely positioned boxes do not paginate — they
+ * keep their offsets and land on top of each other.
+ *
+ * So nothing is repositioned for print; the positioning is abandoned. Each
+ * stack falls back into the flow directly after its own block, which is the
+ * same shape the narrow-pane fallback already takes. Paper has no margin to
+ * spare and no scrollbars, and the reader cannot widen it.
+ *
+ * !important throughout, because what is being overridden is the inline style
+ * left behind by the on-screen measurement.
+ */
+@media print {
+  /* The gutter existed to hold the cards. Nothing is beside the text now. */
+  .markdown-preview-view.lkn-cards,
+  body.lkn-cards-collapsed .markdown-preview-view.lkn-cards {
+    padding-right: 0 !important;
+  }
+
+  .markdown-preview-view.lkn-cards .markdown-preview-sizer {
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  /* Into the flow, under the block it belongs to. */
+  .markdown-preview-view .lkn-card-stack,
+  .markdown-rendered .lkn-card-stack,
+  body.lkn-cards-collapsed .markdown-preview-view .lkn-card-stack,
+  body.lkn-cards-collapsed .markdown-rendered .lkn-card-stack {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    width: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 8px 0 12px !important;
+    padding-left: 10px !important;
+    border-left: 2px solid var(--interactive-accent) !important;
+  }
+
+  /*
+   * The line tracing how far a stack was pushed. It measured a distance that
+   * no longer exists.
+   */
+  .markdown-preview-view .lkn-has-card::after,
+  .markdown-rendered .lkn-has-card::after {
+    display: none !important;
+  }
+
+  /*
+   * Stowed is a reading state, not a property of the note. A strip carries
+   * nothing, and on paper there is nothing to click to bring it back.
+   */
+  body.lkn-cards-collapsed .lkn-card > * {
+    display: revert !important;
+  }
+
+  body.lkn-cards-collapsed .markdown-preview-view .lkn-card-stack .lkn-card,
+  body.lkn-cards-collapsed .markdown-rendered .lkn-card-stack .lkn-card,
+  body.lkn-cards-collapsed .lkn-card-stack.lkn-card-inline .lkn-card {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 8px 10px !important;
+    border: 1px solid var(--background-modifier-border) !important;
+    border-radius: var(--radius-m) !important;
+    background-color: transparent !important;
+    opacity: 1 !important;
+  }
+
+  /*
+   * The six-line limit is a scrollbar in disguise. Paper cannot scroll, so
+   * the limit would not shorten the note — it would delete the rest of it.
+   */
+  .lkn-card .lkn-card-body {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /*
+   * A card is kept whole where it fits. Where it does not, the browser breaks
+   * it anyway rather than overflow the sheet, which is the outcome we want for
+   * the occasional very long note: split across two pages, never truncated.
+   */
+  .lkn-card {
+    break-inside: avoid;
+    background-color: transparent !important;
+  }
+
+  .lkn-card .lkn-card-head {
+    break-after: avoid;
+  }
+
+  /* Nothing on paper responds to being pressed. */
+  .lkn-card-ack,
+  .lkn-card-stow,
+  .lkn-card-remove,
+  .lkn-unread-dot {
+    display: none !important;
+  }
+
+  /* Unread is this device's state, and says nothing about the document. */
+  .lkn-card-unread {
+    border-color: var(--background-modifier-border) !important;
+  }
+
+  /* For a clean document: the note as written, without the annotations. */
+  body.lkn-print-plain .lkn-card-stack {
+    display: none !important;
+  }
+}

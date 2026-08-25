@@ -181,6 +181,7 @@ const DEFAULT_SETTINGS = {
   chatScope: 'mine',
   mentionAll: false,
   mentionMap: '',
+  printCards: 'inline',
 };
 
 /*
@@ -3101,6 +3102,7 @@ class LinknotePlugin extends Plugin {
       body.classList.toggle('lkn-plain-marker', s.markerStyle === 'plain');
       body.classList.toggle('lkn-rule-anchored', !!s.highlightAnchored);
       body.classList.toggle('lkn-cards-collapsed', !!s.cardsCollapsed);
+      body.classList.toggle('lkn-print-plain', printsPlain(s));
     }
   }
 
@@ -4619,6 +4621,18 @@ function readsOnShowing(settings) {
 }
 
 /**
+ * Whether an exported PDF leaves the cards out.
+ *
+ * Only the explicit choice counts; anything unrecognised, missing, or left
+ * over from an older version prints the cards. A document that quietly loses
+ * the annotations is worse than one that carries more than you wanted, because
+ * only one of the two is visible in the result.
+ */
+function printsPlain(settings) {
+  return !!settings && settings.printCards === 'off';
+}
+
+/**
  * The line posted to a chat channel: how many, and from whom. Nothing else.
  *
  * Deliberately no note name and no text. What is annotated is often the part
@@ -5767,6 +5781,26 @@ class LinknoteSettingTab extends PluginSettingTab {
           });
         });
 
+      new Setting(containerEl)
+        .setName('Cards in an exported PDF')
+        .setDesc(
+          'A printed page is a different width and is cut into sheets, so a card cannot stay in ' +
+            'the margin beside its passage — it is printed under the block instead, in full. The ' +
+            'six-line limit is dropped as well: on screen it is a scrollbar, on paper it would ' +
+            'simply delete the rest of the note. Choose Leave them out for a clean copy of the ' +
+            'document as written; the annotations stay in the vault either way.'
+        )
+        .addDropdown((d) => {
+          d.addOption('inline', 'Print them under the block');
+          d.addOption('off', 'Leave them out');
+          d.setValue(s.printCards || DEFAULT_SETTINGS.printCards);
+          d.onChange(async (v) => {
+            s.printCards = v;
+            await this.plugin.saveSettings();
+            this.plugin.applyCardStyle();
+          });
+        });
+
       const widthSetting = new Setting(containerEl)
         .setName('Card width')
         .setDesc('How wide a card in the margin is. The room made for it follows, so a narrower card leaves more of the pane to the text.');
@@ -6215,6 +6249,7 @@ module.exports.sanitizeSeenState = sanitizeSeenState;
 module.exports.headSlot = headSlot;
 module.exports.badgeText = badgeText;
 module.exports.readsOnShowing = readsOnShowing;
+module.exports.printsPlain = printsPlain;
 module.exports.chatText = chatText;
 module.exports.safeWebhook = safeWebhook;
 module.exports.sanitizeChatConfig = sanitizeChatConfig;
