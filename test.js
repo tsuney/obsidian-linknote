@@ -1535,16 +1535,28 @@ console.log('\nthe inbox — when a linknote counts as read');
   check('no settings at all decides nothing', !readsOnShowing(null));
 }
 
-console.log('\nout of sight — hiding every mark');
+console.log('\nout of sight — how much is drawn in the note');
 {
-  const { marksAreHidden } = m;
-  // A reader who cannot see the marks cannot know they are there, so the
-  // safe answer to every unclear value is to keep drawing them.
-  check('by default the marks are drawn', !marksAreHidden({ marksHidden: false }));
-  check('a vault saved before this setting existed draws them', !marksAreHidden({}));
-  check('so does a value nobody recognises', !marksAreHidden({ marksHidden: 'yes' }));
-  check('so do no settings at all', !marksAreHidden(null));
-  check('only a plain true hides them', marksAreHidden({ marksHidden: true }));
+  const { noteMarks, nextMarks } = m;
+  // A reader who cannot see the marks cannot know they are there, so the safe
+  // answer to every unclear value is to keep drawing all of them.
+  eq('by default everything is drawn', noteMarks({ noteMarks: 'all' }), 'all');
+  eq('a vault saved before this setting existed', noteMarks({}), 'all');
+  eq('a value nobody recognises', noteMarks({ noteMarks: 'faint' }), 'all');
+  eq('no settings at all', noteMarks(null), 'all');
+  eq('markers only, when asked for', noteMarks({ noteMarks: 'markers' }), 'markers');
+  eq('nothing, when asked for', noteMarks({ noteMarks: 'none' }), 'none');
+
+  // 0.24.0 asked this as a yes-or-no, and someone answered it.
+  eq('the old switch, turned on', noteMarks({ marksHidden: true }), 'none');
+  eq('the old switch, left off', noteMarks({ marksHidden: false }), 'all');
+  eq('the new answer wins over the old switch',
+    noteMarks({ marksHidden: true, noteMarks: 'markers' }), 'markers');
+
+  eq('everything gives way to markers', nextMarks('all'), 'markers');
+  eq('markers give way to nothing', nextMarks('markers'), 'none');
+  eq('and nothing comes back round', nextMarks('none'), 'all');
+  eq('an unknown level comes back round too', nextMarks('sideways'), 'all');
 }
 
 console.log('\ncards on paper — how an exported PDF carries them');

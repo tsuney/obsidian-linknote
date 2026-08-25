@@ -146,7 +146,9 @@ The cards of one block are gathered behind a single rail. Where a group has to b
 
 Press the **–** on any card to stow them all. Each shrinks to a strip beside its passage, so you can still see which passages carry a note, and the text takes the room back. Pressing any strip brings them back, as does the command **Show or stow the linknote cards**. The state is remembered.
 
-To put the annotations out of sight entirely, run **Show or hide every Linknote mark**. The markers, the rules, the cards and the floating button all go, and the note reads exactly as it would with the plugin uninstalled — in print as well as on screen. Nothing is written to any note: the markers and block IDs stay in the Markdown, and this only decides whether they are drawn. The sidebar list and the ribbon icon stay, so the linknotes are still reachable while the notes look untouched.
+To draw less, run **Cycle the marks**. *Markers, but no cards* keeps everything that says where a linknote is — the chips, the rules if you have them on, the button that makes new ones — and takes away the cards and the room made for them; the linknotes are read in the sidebar list instead, which still points at the passage when you press a row. *Nothing at all* goes further and leaves the note reading exactly as it would with the plugin uninstalled. Both apply in print as well as on screen.
+
+Nothing is written to any note at either level: the markers and block IDs stay in the Markdown, and this only decides what is drawn. The sidebar list and the ribbon icon stay throughout, so the linknotes are still reachable while the notes look untouched.
 
 Press the quoted passage and the words are pointed at in the text beside the card. Nothing is written to your note and nothing in Obsidian's rendered page is altered: the range is handed to the browser's own highlight registry, which colors it for a few seconds and then lets go. A passage spanning bold text or a link highlights correctly for the same reason. **The anchor is still the block** — the recorded words only say which part of it was selected, and where the note has since been revised so those words are gone, pressing does nothing but say so. The same works from a sidebar row, after it jumps to the passage.
 
@@ -206,7 +208,7 @@ Linknote does nothing about conflicts. Two people editing one source note at the
 | Card text color | Normal | Normal, Muted, Faint and Accent follow the theme; a custom color does not |
 | Custom card text color | — | shown only while Card text color is Custom |
 | Start with cards stowed | off | stowed cards are thin strips beside their passages |
-| Hide every Linknote mark | off | markers, rules, cards and the floating button all out of sight, on screen and in print. Nothing is written to any note; the sidebar list and ribbon icon stay |
+| What Linknote draws in the note | Everything | *Markers, but no cards* keeps what says where a linknote is and drops the cards; *Nothing at all* leaves the note as it would read with the plugin uninstalled. Both apply in print too. Nothing is written to any note; the sidebar list and ribbon icon stay |
 | Card placement | In the margin | a narrow pane falls back to inline either way; on mobile no cards are drawn at all |
 | Cards in an exported PDF | Beside the block, as on screen | a gutter measured as a share of the page. *Under the block* suits long cards; *Leave them out* for a clean copy. Printed in full either way — the line limit is a scrollbar on screen and would be a deletion on paper. Stowed cards are never printed |
 | Body heading | `Linknote` | the heading marking your own note inside a linknote |
@@ -264,9 +266,9 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
-### 0.24.0
+### 0.24.1
 
-- **Show or hide every Linknote mark**: a command that takes the markers, rules, cards and floating button out of sight, on screen and in print. Nothing is written to any note.
+- **Cycle the marks**: a command and a three-way setting for how much Linknote draws into a note — everything, markers but no cards, or nothing at all. Nothing is written to any note at any level.
 
 ### 0.23.2
 

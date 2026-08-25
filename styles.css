@@ -1091,8 +1091,8 @@ body.is-mobile .lkn-sheet {
    * follows the paper and the page margins instead of the pane the note
    * happened to be read in.
    */
-  body.lkn-print-margin:not(.lkn-cards-collapsed):not(.lkn-marks-off) .markdown-preview-sizer:has(.lkn-card-stack),
-  body.lkn-print-margin:not(.lkn-cards-collapsed):not(.lkn-marks-off) .markdown-rendered:has(.lkn-card-stack) {
+  body.lkn-print-margin:not(.lkn-cards-collapsed):not(.lkn-marks-off):not(.lkn-marks-markers) .markdown-preview-sizer:has(.lkn-card-stack),
+  body.lkn-print-margin:not(.lkn-cards-collapsed):not(.lkn-marks-off):not(.lkn-marks-markers) .markdown-rendered:has(.lkn-card-stack) {
     max-width: none !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
@@ -1145,41 +1145,66 @@ body.is-mobile .lkn-sheet {
 }
 
 /*
- * Linknote — out of sight.
+ * Linknote — out of sight, in two depths.
  *
- * Everything this plugin draws into a note, gone: the markers, the rules
- * beside annotated passages, the cards and the gutter that held them, the
- * line tracing a moved stack, and the floating button. What is left is the
- * note as it would read with the plugin uninstalled.
+ * `markers` takes away the cards and the room made for them, and leaves
+ * everything that says where a linknote is — the chips, the rules if they are
+ * switched on, the button that makes new ones. That middle level exists
+ * because the deeper one hid too much to work in: a linknote made while
+ * nothing was drawn gave no sign it had been made, and the note gave no sign
+ * there was anything to look for. A marker says "there is something here";
+ * the sidebar list says what.
  *
- * Nothing here touches a file. The markers and block IDs are still in the
- * Markdown; this only decides whether they are drawn. That is the whole point
- * — hiding an annotation must never be a way of losing one.
+ * The rules are left to their own setting rather than decided again here. One
+ * question, one answer: "should annotated passages carry a rule" is asked
+ * once, under Highlight annotated blocks.
+ *
+ * `none` takes the markers and the rules as well, and what is left is the note
+ * as it would read with the plugin uninstalled.
+ *
+ * Nothing here touches a file at either level. The markers and block IDs are
+ * still in the Markdown; this only decides what is drawn. That is the whole
+ * point — hiding an annotation must never be a way of losing one.
  *
  * Not inside @media print: hidden means hidden, on paper too. A reader who
- * turned the marks off and then printed would not expect them back.
+ * turned the marks down and then printed would not expect them back.
  */
-body.lkn-marks-off .markdown-preview-view a.lkn-marker,
-body.lkn-marks-off .markdown-rendered a.lkn-marker,
-body.lkn-marks-off .lkn-card-stack,
-body.lkn-marks-off .lkn-float-btn {
+
+/* Both levels: no cards, and no line tracing where a stack was pushed to. */
+body.lkn-marks-markers .lkn-card-stack,
+body.lkn-marks-off .lkn-card-stack {
   display: none !important;
 }
 
-body.lkn-marks-off .markdown-preview-view .lkn-anchored::before,
-body.lkn-marks-off .markdown-rendered .lkn-anchored::before,
+body.lkn-marks-markers .markdown-preview-view .lkn-has-card::after,
+body.lkn-marks-markers .markdown-rendered .lkn-has-card::after,
 body.lkn-marks-off .markdown-preview-view .lkn-has-card::after,
 body.lkn-marks-off .markdown-rendered .lkn-has-card::after {
   content: none !important;
 }
 
 /* The gutter was room for the cards. There are no cards. */
+body.lkn-marks-markers .markdown-preview-view.lkn-cards,
 body.lkn-marks-off .markdown-preview-view.lkn-cards,
+body.lkn-marks-markers.lkn-cards-collapsed .markdown-preview-view.lkn-cards,
 body.lkn-marks-off.lkn-cards-collapsed .markdown-preview-view.lkn-cards {
   padding-right: 0 !important;
 }
 
+body.lkn-marks-markers .markdown-preview-view.lkn-cards .markdown-preview-sizer,
 body.lkn-marks-off .markdown-preview-view.lkn-cards .markdown-preview-sizer {
   margin-left: auto !important;
   margin-right: auto !important;
+}
+
+/* Only the deeper level: the markers, the rules, and the button too. */
+body.lkn-marks-off .markdown-preview-view a.lkn-marker,
+body.lkn-marks-off .markdown-rendered a.lkn-marker,
+body.lkn-marks-off .lkn-float-btn {
+  display: none !important;
+}
+
+body.lkn-marks-off .markdown-preview-view .lkn-anchored::before,
+body.lkn-marks-off .markdown-rendered .lkn-anchored::before {
+  content: none !important;
 }

@@ -182,7 +182,7 @@ const DEFAULT_SETTINGS = {
   mentionAll: false,
   mentionMap: '',
   printCards: 'margin',
-  marksHidden: false,
+  noteMarks: 'all',
 };
 
 /*
@@ -1378,9 +1378,11 @@ class LinknotePlugin extends Plugin {
     });
 
     this.addCommand({
+      // The id is 0.24.0's, so a hotkey bound to it keeps working. Only what
+      // it does has grown a third setting.
       id: 'toggle-marks',
-      name: 'Show or hide every Linknote mark',
-      callback: () => this.toggleMarksHidden(),
+      name: 'Cycle the marks: everything, markers only, nothing',
+      callback: () => this.setNoteMarks(nextMarks(noteMarks(this.settings))),
     });
 
     this.addCommand({
@@ -3109,7 +3111,9 @@ class LinknotePlugin extends Plugin {
       body.classList.toggle('lkn-plain-marker', s.markerStyle === 'plain');
       body.classList.toggle('lkn-rule-anchored', !!s.highlightAnchored);
       body.classList.toggle('lkn-cards-collapsed', !!s.cardsCollapsed);
-      body.classList.toggle('lkn-marks-off', marksAreHidden(s));
+      const marks = noteMarks(s);
+      body.classList.toggle('lkn-marks-markers', marks === 'markers');
+      body.classList.toggle('lkn-marks-off', marks === 'none');
       const print = printMode(s);
       body.classList.toggle('lkn-print-margin', print === 'margin');
       body.classList.toggle('lkn-print-inline', print === 'inline');
@@ -3164,28 +3168,23 @@ class LinknotePlugin extends Plugin {
   }
 
   /**
-   * Takes every mark this plugin draws out of sight, or brings them all back.
+   * Decides how much of itself the plugin draws into a note.
    *
-   * Stowing (above) shrinks the cards to strips but keeps the marks, because
-   * it answers "not now"; this answers "not at all", and leaves the note
-   * reading exactly as it would with the plugin uninstalled. Nothing is
-   * written to any note either way — the markers and block IDs stay in the
-   * file, and this only decides whether they are drawn.
+   * Stowing (above) shrinks the cards to strips but keeps everything else,
+   * because it answers "not now". This answers "how much at all", and at
+   * 'none' leaves the note reading exactly as it would with the plugin
+   * uninstalled. Nothing is written to any note at any level — the markers
+   * and block IDs stay in the file, and this only decides what is drawn.
    *
-   * It is said out loud both ways. A hidden state that leaves no sign of
-   * itself is one the reader cannot get out of, or even know they are in:
-   * a note with no marks is indistinguishable from a note nobody annotated.
+   * Every change is said out loud. A note with no marks is indistinguishable
+   * from a note nobody has annotated, so a reader given no sign of the state
+   * cannot tell which they are looking at, nor how to get back.
    */
-  async toggleMarksHidden(next) {
-    const hidden = next === undefined ? !marksAreHidden(this.settings) : !!next;
-    this.settings.marksHidden = hidden;
+  async setNoteMarks(level) {
+    this.settings.noteMarks = level === 'markers' || level === 'none' ? level : 'all';
     await this.saveSettings();
     this.applyCardStyle();
-    new Notice(
-      hidden
-        ? 'Linknote: marks hidden. The notes are untouched — run the command again to bring them back.'
-        : 'Linknote: marks shown again.'
-    );
+    new Notice(SAID[this.settings.noteMarks]);
   }
 
   /** Runs the card passes again once the view has had time to draw. */
@@ -4656,15 +4655,39 @@ function readsOnShowing(settings) {
   return !!settings && settings.readOn === 'shown';
 }
 
+/** What each level is told to the reader as, since none of them is visible. */
+const SAID = {
+  all: 'Linknote: everything is drawn again.',
+  markers: 'Linknote: markers, but no cards. The linknotes themselves are in the sidebar list.',
+  none: 'Linknote: nothing is drawn. The notes are untouched, and the sidebar list still has every linknote.',
+};
+
 /**
- * Whether every mark this plugin draws is out of sight.
+ * How much of itself the plugin draws into a note: 'all', 'markers' or 'none'.
  *
- * Only an explicit true hides them. A setting that cannot be read must leave
- * the annotations visible: a reader who cannot see them does not know they are
- * there, and would take the note for one nobody has commented on.
+ * One question with three answers rather than a switch, because the middle one
+ * turned out to be the useful one: without any mark at all, a linknote made
+ * while hidden gives no sign it was made, and the note gives no sign there is
+ * anything to look for. The marker alone says "there is something here", and
+ * the sidebar list says what.
+ *
+ * Anything unreadable means 'all'. A reader who cannot see the marks does not
+ * know they are there, and would take the note for one nobody has annotated.
  */
-function marksAreHidden(settings) {
-  return !!settings && settings.marksHidden === true;
+function noteMarks(settings) {
+  if (!settings) return 'all';
+  const level = settings.noteMarks;
+  if (level === 'all' || level === 'markers' || level === 'none') return level;
+  // 0.24.0 asked this as a yes-or-no. That answer still means what it meant.
+  if (settings.marksHidden === true) return 'none';
+  return 'all';
+}
+
+/** The next level round, for the command that cycles them. */
+function nextMarks(level) {
+  if (level === 'all') return 'markers';
+  if (level === 'markers') return 'none';
+  return 'all';
 }
 
 /**
@@ -5996,20 +6019,26 @@ class LinknoteSettingTab extends PluginSettingTab {
     }
 
     new Setting(containerEl)
-      .setName('Hide every Linknote mark')
+      .setName('What Linknote draws in the note')
       .setDesc(
-        'The markers, the rules beside annotated passages, the cards and the floating button all ' +
-          'go, and the note reads exactly as it would with the plugin uninstalled — in print as ' +
-          'well as on screen. Nothing is written to any note: the markers and block IDs stay in ' +
-          'the file, and this only decides whether they are drawn. Bound to the command "Show or ' +
-          'hide every Linknote mark", which is the quicker way to it. The sidebar list and the ' +
-          'ribbon icon stay, so the linknotes are still reachable while the notes look untouched.'
+'Markers, but no cards takes away the cards and the room made for them, and leaves everything ' +
+          'that says where a linknote is — the marker chips, the rules if you have them on, and ' +
+          'the button that makes new ones. The linknotes are read in the sidebar list instead, ' +
+          'which still points at the passage when you press a row. Nothing at all goes further ' +
+          'and leaves the note reading exactly as it would with the plugin uninstalled, in print ' +
+          'as well as on screen. Neither writes anything to any note: the markers and block IDs ' +
+          'stay in the file, and this only decides what is drawn. The command "Cycle the marks" ' +
+          'is the quicker way round, and the sidebar list and ribbon icon stay at every level.'
       )
-      .addToggle((t) =>
-        t.setValue(marksAreHidden(s)).onChange((v) => {
-          this.plugin.toggleMarksHidden(v);
-        })
-      );
+      .addDropdown((d) => {
+        d.addOption('all', 'Everything');
+        d.addOption('markers', 'Markers, but no cards');
+        d.addOption('none', 'Nothing at all');
+        d.setValue(noteMarks(s));
+        d.onChange((v) => {
+          this.plugin.setNoteMarks(v);
+        });
+      });
 
     /* ---------------------------------------------------------- behaviour */
 
@@ -6317,7 +6346,8 @@ module.exports.headSlot = headSlot;
 module.exports.badgeText = badgeText;
 module.exports.readsOnShowing = readsOnShowing;
 module.exports.printMode = printMode;
-module.exports.marksAreHidden = marksAreHidden;
+module.exports.noteMarks = noteMarks;
+module.exports.nextMarks = nextMarks;
 module.exports.chatText = chatText;
 module.exports.safeWebhook = safeWebhook;
 module.exports.sanitizeChatConfig = sanitizeChatConfig;

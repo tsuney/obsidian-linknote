@@ -1,10 +1,16 @@
 # Changelog
 
+### 0.24.1
+
+- **Markers, but no cards** — a middle level between drawing everything and drawing nothing, because 0.24.0's two states left a gap. With nothing drawn, a linknote made while hidden gave no sign it had been made, and the note gave no sign there was anything to look for: the only way in or out was the command palette. A marker says *there is something here*; the sidebar list says what, and still points at the passage when you press a row.
+- The rules beside annotated passages are left to **Highlight annotated blocks**, which is where that question is already asked. Only *Nothing at all* overrides it, because that level has to.
+- The command is now **Cycle the marks: everything, markers only, nothing**, and the setting is a three-way **What Linknote draws in the note**. The command keeps 0.24.0's id, so a hotkey bound to it still works. A vault that answered 0.24.0's yes-or-no keeps its answer.
+
 ### 0.24.0
 
 - **Show or hide every Linknote mark**, a command, and a setting of the same name beside it. The markers, the rules beside annotated passages, the cards and the gutter that held them, the line tracing a moved stack, the floating button — all out of sight, and the note reads exactly as it would with the plugin uninstalled. In print as well: a reader who turned the marks off and then exported would not expect them back.
 - **Nothing is written to any note.** The markers and block IDs stay in the Markdown; this only decides whether they are drawn. Hiding an annotation must never be a way of losing one, so the two are kept apart — remove a linknote when you mean to remove it, hide the marks when you only mean not to see them.
-- The **sidebar list and the ribbon icon stay**, so the linknotes remain reachable while the notes look untouched — which is the point of a reading state rather than an uninstall. The state is said out loud both ways, because a note with no marks is indistinguishable from a note nobody has annotated, and a reader who cannot tell which they are looking at cannot get back.
+- The **sidebar list and the ribbon icon stay**, so the linknotes remain reachable while the notes look untouched.
 
 ### 0.23.2
 
