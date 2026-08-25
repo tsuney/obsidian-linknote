@@ -1,5 +1,11 @@
 # Changelog
 
+### 0.24.0
+
+- **Show or hide every Linknote mark**, a command, and a setting of the same name beside it. The markers, the rules beside annotated passages, the cards and the gutter that held them, the line tracing a moved stack, the floating button — all out of sight, and the note reads exactly as it would with the plugin uninstalled. In print as well: a reader who turned the marks off and then exported would not expect them back.
+- **Nothing is written to any note.** The markers and block IDs stay in the Markdown; this only decides whether they are drawn. Hiding an annotation must never be a way of losing one, so the two are kept apart — remove a linknote when you mean to remove it, hide the marks when you only mean not to see them.
+- The **sidebar list and the ribbon icon stay**, so the linknotes remain reachable while the notes look untouched — which is the point of a reading state rather than an uninstall. The state is said out loud both ways, because a note with no marks is indistinguishable from a note nobody has annotated, and a reader who cannot tell which they are looking at cannot get back.
+
 ### 0.23.2
 
 - **The printed card fills the margin it was given.** 0.23.1 reserved 36% of the page for the cards and then put a card in it barely half that wide, leaving a strip of blank paper down the right edge. The two numbers are percentages of different things — the gutter of the page, the card of the text column that is left over after it — and treating them as the same scale is what shrank the card. Stated against the right base, the card now reaches the margin.

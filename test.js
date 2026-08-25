@@ -1535,6 +1535,18 @@ console.log('\nthe inbox — when a linknote counts as read');
   check('no settings at all decides nothing', !readsOnShowing(null));
 }
 
+console.log('\nout of sight — hiding every mark');
+{
+  const { marksAreHidden } = m;
+  // A reader who cannot see the marks cannot know they are there, so the
+  // safe answer to every unclear value is to keep drawing them.
+  check('by default the marks are drawn', !marksAreHidden({ marksHidden: false }));
+  check('a vault saved before this setting existed draws them', !marksAreHidden({}));
+  check('so does a value nobody recognises', !marksAreHidden({ marksHidden: 'yes' }));
+  check('so do no settings at all', !marksAreHidden(null));
+  check('only a plain true hides them', marksAreHidden({ marksHidden: true }));
+}
+
 console.log('\ncards on paper — how an exported PDF carries them');
 {
   const { printMode } = m;

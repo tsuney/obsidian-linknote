@@ -1091,8 +1091,8 @@ body.is-mobile .lkn-sheet {
    * follows the paper and the page margins instead of the pane the note
    * happened to be read in.
    */
-  body.lkn-print-margin:not(.lkn-cards-collapsed) .markdown-preview-sizer:has(.lkn-card-stack),
-  body.lkn-print-margin:not(.lkn-cards-collapsed) .markdown-rendered:has(.lkn-card-stack) {
+  body.lkn-print-margin:not(.lkn-cards-collapsed):not(.lkn-marks-off) .markdown-preview-sizer:has(.lkn-card-stack),
+  body.lkn-print-margin:not(.lkn-cards-collapsed):not(.lkn-marks-off) .markdown-rendered:has(.lkn-card-stack) {
     max-width: none !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
@@ -1142,4 +1142,44 @@ body.is-mobile .lkn-sheet {
     padding-left: 10px !important;
     border-left: 2px solid var(--interactive-accent) !important;
   }
+}
+
+/*
+ * Linknote — out of sight.
+ *
+ * Everything this plugin draws into a note, gone: the markers, the rules
+ * beside annotated passages, the cards and the gutter that held them, the
+ * line tracing a moved stack, and the floating button. What is left is the
+ * note as it would read with the plugin uninstalled.
+ *
+ * Nothing here touches a file. The markers and block IDs are still in the
+ * Markdown; this only decides whether they are drawn. That is the whole point
+ * — hiding an annotation must never be a way of losing one.
+ *
+ * Not inside @media print: hidden means hidden, on paper too. A reader who
+ * turned the marks off and then printed would not expect them back.
+ */
+body.lkn-marks-off .markdown-preview-view a.lkn-marker,
+body.lkn-marks-off .markdown-rendered a.lkn-marker,
+body.lkn-marks-off .lkn-card-stack,
+body.lkn-marks-off .lkn-float-btn {
+  display: none !important;
+}
+
+body.lkn-marks-off .markdown-preview-view .lkn-anchored::before,
+body.lkn-marks-off .markdown-rendered .lkn-anchored::before,
+body.lkn-marks-off .markdown-preview-view .lkn-has-card::after,
+body.lkn-marks-off .markdown-rendered .lkn-has-card::after {
+  content: none !important;
+}
+
+/* The gutter was room for the cards. There are no cards. */
+body.lkn-marks-off .markdown-preview-view.lkn-cards,
+body.lkn-marks-off.lkn-cards-collapsed .markdown-preview-view.lkn-cards {
+  padding-right: 0 !important;
+}
+
+body.lkn-marks-off .markdown-preview-view.lkn-cards .markdown-preview-sizer {
+  margin-left: auto !important;
+  margin-right: auto !important;
 }

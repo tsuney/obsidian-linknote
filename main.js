@@ -182,6 +182,7 @@ const DEFAULT_SETTINGS = {
   mentionAll: false,
   mentionMap: '',
   printCards: 'margin',
+  marksHidden: false,
 };
 
 /*
@@ -1374,6 +1375,12 @@ class LinknotePlugin extends Plugin {
       id: 'toggle-cards',
       name: 'Show or stow the linknote cards',
       callback: () => this.toggleCardsCollapsed(),
+    });
+
+    this.addCommand({
+      id: 'toggle-marks',
+      name: 'Show or hide every Linknote mark',
+      callback: () => this.toggleMarksHidden(),
     });
 
     this.addCommand({
@@ -3102,6 +3109,7 @@ class LinknotePlugin extends Plugin {
       body.classList.toggle('lkn-plain-marker', s.markerStyle === 'plain');
       body.classList.toggle('lkn-rule-anchored', !!s.highlightAnchored);
       body.classList.toggle('lkn-cards-collapsed', !!s.cardsCollapsed);
+      body.classList.toggle('lkn-marks-off', marksAreHidden(s));
       const print = printMode(s);
       body.classList.toggle('lkn-print-margin', print === 'margin');
       body.classList.toggle('lkn-print-inline', print === 'inline');
@@ -3153,6 +3161,31 @@ class LinknotePlugin extends Plugin {
     this.settings.cardsCollapsed = next === undefined ? !this.settings.cardsCollapsed : !!next;
     await this.saveSettings();
     this.applyCardStyle();
+  }
+
+  /**
+   * Takes every mark this plugin draws out of sight, or brings them all back.
+   *
+   * Stowing (above) shrinks the cards to strips but keeps the marks, because
+   * it answers "not now"; this answers "not at all", and leaves the note
+   * reading exactly as it would with the plugin uninstalled. Nothing is
+   * written to any note either way — the markers and block IDs stay in the
+   * file, and this only decides whether they are drawn.
+   *
+   * It is said out loud both ways. A hidden state that leaves no sign of
+   * itself is one the reader cannot get out of, or even know they are in:
+   * a note with no marks is indistinguishable from a note nobody annotated.
+   */
+  async toggleMarksHidden(next) {
+    const hidden = next === undefined ? !marksAreHidden(this.settings) : !!next;
+    this.settings.marksHidden = hidden;
+    await this.saveSettings();
+    this.applyCardStyle();
+    new Notice(
+      hidden
+        ? 'Linknote: marks hidden. The notes are untouched — run the command again to bring them back.'
+        : 'Linknote: marks shown again.'
+    );
   }
 
   /** Runs the card passes again once the view has had time to draw. */
@@ -4624,6 +4657,17 @@ function readsOnShowing(settings) {
 }
 
 /**
+ * Whether every mark this plugin draws is out of sight.
+ *
+ * Only an explicit true hides them. A setting that cannot be read must leave
+ * the annotations visible: a reader who cannot see them does not know they are
+ * there, and would take the note for one nobody has commented on.
+ */
+function marksAreHidden(settings) {
+  return !!settings && settings.marksHidden === true;
+}
+
+/**
  * How an exported PDF carries the cards: 'margin', 'inline' or 'off'.
  *
  * Anything unrecognised, missing, or left over from an older version prints
@@ -5951,6 +5995,22 @@ class LinknoteSettingTab extends PluginSettingTab {
         );
     }
 
+    new Setting(containerEl)
+      .setName('Hide every Linknote mark')
+      .setDesc(
+        'The markers, the rules beside annotated passages, the cards and the floating button all ' +
+          'go, and the note reads exactly as it would with the plugin uninstalled — in print as ' +
+          'well as on screen. Nothing is written to any note: the markers and block IDs stay in ' +
+          'the file, and this only decides whether they are drawn. Bound to the command "Show or ' +
+          'hide every Linknote mark", which is the quicker way to it. The sidebar list and the ' +
+          'ribbon icon stay, so the linknotes are still reachable while the notes look untouched.'
+      )
+      .addToggle((t) =>
+        t.setValue(marksAreHidden(s)).onChange((v) => {
+          this.plugin.toggleMarksHidden(v);
+        })
+      );
+
     /* ---------------------------------------------------------- behaviour */
 
     new Setting(containerEl).setName('Behavior').setHeading();
@@ -6257,6 +6317,7 @@ module.exports.headSlot = headSlot;
 module.exports.badgeText = badgeText;
 module.exports.readsOnShowing = readsOnShowing;
 module.exports.printMode = printMode;
+module.exports.marksAreHidden = marksAreHidden;
 module.exports.chatText = chatText;
 module.exports.safeWebhook = safeWebhook;
 module.exports.sanitizeChatConfig = sanitizeChatConfig;
