@@ -261,6 +261,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### 0.23.2
+
+- The printed card fills the margin reserved for it, instead of leaving a blank strip down the page. A card is also, at last, exactly as wide as the width you set.
+
 ### 0.23.1
 
 - Cards keep the margin when exported to PDF, in a gutter measured as a share of the page. Stowed cards are not printed.

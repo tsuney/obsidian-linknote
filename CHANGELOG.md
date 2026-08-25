@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.23.2
+
+- **The printed card fills the margin it was given.** 0.23.1 reserved 36% of the page for the cards and then put a card in it barely half that wide, leaving a strip of blank paper down the right edge. The two numbers are percentages of different things — the gutter of the page, the card of the text column that is left over after it — and treating them as the same scale is what shrank the card. Stated against the right base, the card now reaches the margin.
+- **A card is as wide as the width you set it.** `.lkn-card` sized its padding and border on top of its width instead of inside it, so every card has been 22px wider than the stack holding it since cards were introduced. On screen that only ate into the gap beside the text, which is why it survived twenty versions unnoticed; in print it pushed the card past the edge of the sheet, which is how it was found. Cards on screen are correspondingly 22px narrower now — that is the width in the setting, at last meaning what it says.
+
 ### 0.23.1
 
 - **Cards keep the margin on paper.** 0.23.0 fixed the overlapping by putting every card under its block, which threw away the thing that makes a margin note a margin note. The offsets were the problem, not the margin: a stack now becomes a right float in a gutter reserved on the page, so it sits beside its passage as it does on screen. A float paginates, and `clear: right` is what keeps two stacks apart — the collision the on-screen code solves by measuring, solved here by the layout itself, which needs no numbers that a different page size would invalidate. The gutter is a share of the page rather than a pixel count, so it follows the paper and its margins instead of the pane the note happened to be read in.

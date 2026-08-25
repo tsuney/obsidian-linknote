@@ -583,6 +583,13 @@ body.is-mobile .markdown-rendered li.lkn-anchored::before {
 .markdown-preview-view .lkn-card,
 .markdown-rendered .lkn-card {
   width: 100%;
+  /*
+   * Without this the padding and border are added to the 100%, and every card
+   * is 22px wider than the stack holding it. On screen that only ate into the
+   * gap beside the text and went unnoticed for twenty versions; in print it
+   * pushed the card off the sheet, which is how it was found.
+   */
+  box-sizing: border-box;
   padding: 8px 10px;
   border-radius: var(--radius-m);
   border: 1px solid var(--background-modifier-border);
@@ -1100,12 +1107,18 @@ body.is-mobile .lkn-sheet {
     float: right !important;
     /* Two stacks near each other queue down the gutter instead of colliding. */
     clear: right !important;
-    width: 30% !important;
     /*
-     * Wider than the card by the gap we want beside the text: the float's
-     * margin box ends at the text column, so the card itself lands past it.
+     * These two are percentages of the *text column*, not of the page, because
+     * that is the float's containing block — and the text column is what is
+     * left after the gutter above, 64% of the page. So the gutter's 36% is
+     * 56% here, and the card fills it but for a gap: 52% wide, pushed out by
+     * 56%, which puts its right edge on the gutter's own edge.
+     *
+     * Getting this wrong is invisible rather than broken — the card simply
+     * comes out narrow with dead paper beside it, which is what 0.23.1 did.
      */
-    margin: 0 -34% 10px 0 !important;
+    width: 52% !important;
+    margin: 0 -56% 10px 0 !important;
     max-height: none !important;
     overflow: visible !important;
     padding-left: 8px !important;
