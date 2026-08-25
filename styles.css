@@ -1062,11 +1062,16 @@ body.is-mobile .lkn-sheet {
     break-after: avoid;
   }
 
-  /* Nothing on paper responds to being pressed. */
+  /*
+   * Nothing on paper responds to being pressed. The floating button is fixed
+   * to the window, which on paper means the first sheet, and it belongs to
+   * writing rather than to the document.
+   */
   .lkn-card-ack,
   .lkn-card-stow,
   .lkn-card-remove,
-  .lkn-unread-dot {
+  .lkn-unread-dot,
+  .lkn-float-btn {
     display: none !important;
   }
 
@@ -1159,8 +1164,11 @@ body.is-mobile .lkn-sheet {
  * question, one answer: "should annotated passages carry a rule" is asked
  * once, under Highlight annotated blocks.
  *
- * `none` takes the markers and the rules as well, and what is left is the note
- * as it would read with the plugin uninstalled.
+ * `none` takes the markers and the rules as well, and what is left in the note
+ * is nothing at all. The floating button is the exception: it belongs to the
+ * act of making a linknote, not to the note, and without it the only way to
+ * write one is the command palette — which is a worse note-taking tool than
+ * the button, and not one every reader knows is there.
  *
  * Nothing here touches a file at either level. The markers and block IDs are
  * still in the Markdown; this only decides what is drawn. That is the whole
@@ -1197,10 +1205,9 @@ body.lkn-marks-off .markdown-preview-view.lkn-cards .markdown-preview-sizer {
   margin-right: auto !important;
 }
 
-/* Only the deeper level: the markers, the rules, and the button too. */
+/* Only the deeper level: the markers and the rules. Not the button. */
 body.lkn-marks-off .markdown-preview-view a.lkn-marker,
-body.lkn-marks-off .markdown-rendered a.lkn-marker,
-body.lkn-marks-off .lkn-float-btn {
+body.lkn-marks-off .markdown-rendered a.lkn-marker {
   display: none !important;
 }
 

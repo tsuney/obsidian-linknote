@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.24.2
+
+- **The button on a selection stays, whatever else is hidden.** *Nothing at all* took it away with everything else, which left the command palette as the only way to write a linknote — a worse tool for it than the button, and not one every reader knows is there. The button belongs to the act of writing rather than to the note, so it is not a mark the note carries and does not go with them. What the note itself shows is unchanged: nothing.
+- It is never printed, at any level. It is fixed to the window, which on paper means the first sheet, and a button is not part of a document.
+
 ### 0.24.1
 
 - **Markers, but no cards** — a middle level between drawing everything and drawing nothing, because 0.24.0's two states left a gap. With nothing drawn, a linknote made while hidden gave no sign it had been made, and the note gave no sign there was anything to look for: the only way in or out was the command palette. A marker says *there is something here*; the sidebar list says what, and still points at the passage when you press a row.

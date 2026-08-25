@@ -4659,7 +4659,7 @@ function readsOnShowing(settings) {
 const SAID = {
   all: 'Linknote: everything is drawn again.',
   markers: 'Linknote: markers, but no cards. The linknotes themselves are in the sidebar list.',
-  none: 'Linknote: nothing is drawn. The notes are untouched, and the sidebar list still has every linknote.',
+  none: 'Linknote: nothing is drawn in the note. The button still appears on a selection, and the sidebar list still has every linknote.',
 };
 
 /**
@@ -6022,13 +6022,15 @@ class LinknoteSettingTab extends PluginSettingTab {
       .setName('What Linknote draws in the note')
       .setDesc(
 'Markers, but no cards takes away the cards and the room made for them, and leaves everything ' +
-          'that says where a linknote is — the marker chips, the rules if you have them on, and ' +
-          'the button that makes new ones. The linknotes are read in the sidebar list instead, ' +
-          'which still points at the passage when you press a row. Nothing at all goes further ' +
-          'and leaves the note reading exactly as it would with the plugin uninstalled, in print ' +
-          'as well as on screen. Neither writes anything to any note: the markers and block IDs ' +
-          'stay in the file, and this only decides what is drawn. The command "Cycle the marks" ' +
-          'is the quicker way round, and the sidebar list and ribbon icon stay at every level.'
+          'that says where a linknote is — the marker chips and the rules, if you have them on. ' +
+          'Nothing at all goes further: the note is left reading exactly as it would with the ' +
+          'plugin uninstalled, in print as well as on screen. The button on a selection stays at ' +
+          'every level, because it belongs to writing a linknote rather than to the note, and ' +
+          'without it the only way to write one is the command palette. So do the sidebar list ' +
+          'and the ribbon icon, which is where the linknotes are read — press a row and it still ' +
+          'points at the passage. Nothing is written to any note at any level: the markers and ' +
+          'block IDs stay in the file, and this only decides what is drawn. The command "Cycle ' +
+          'the marks" is the quicker way round.'
       )
       .addDropdown((d) => {
         d.addOption('all', 'Everything');
