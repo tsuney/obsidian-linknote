@@ -422,6 +422,29 @@ console.log('\nthe date being typed at the caret');
     eq('and the phrase is kept, to show what was understood', picks[0].phrase, 'next fri');
   }
   eq('a phrase that resolves to nothing is dropped', datePicks('lunch', parse).length, 0);
+
+  // The one that shipped broken in 0.25.0. A phrase it cannot read comes back
+  // formatted — as the words "Invalid date" — and taken at face value it was
+  // offered as a date and written into the note as [[Invalid date]].
+  const { usableDate } = m;
+  eq('a moment that says it failed is not a date',
+    usableDate({ formattedString: 'Invalid date', moment: { isValid: () => false } }), '');
+  eq('nor is a Date that is not one',
+    usableDate({ formattedString: 'Invalid date', date: new Date('nonsense') }), '');
+  eq('nor are the words themselves, whatever else came with them',
+    usableDate({ formattedString: 'Invalid date' }), '');
+  eq('however they are capitalised', usableDate({ formattedString: 'invalid DATE' }), '');
+  eq('a real date is a date',
+    usableDate({ formattedString: '2026-08-28-Friday', moment: { isValid: () => true } }),
+    '2026-08-28-Friday');
+  eq('nothing at all is not a date', usableDate(null), '');
+
+  const shrugs = (text) =>
+    text === 'today' ? { formattedString: '2026-08-25-Tuesday', moment: { isValid: () => true } }
+                     : { formattedString: 'Invalid date', moment: { isValid: () => false } };
+  eq('so 明日 is offered as nothing rather than as a broken link',
+    datePicks('明日', shrugs).length, 0);
+  eq('and the phrases it can read are unaffected', datePicks('today', shrugs).length, 1);
   eq('nothing typed yet offers the openers', datePicks('', parse).length, 5);
   eq('the first opener is today', datePicks('', parse)[0].date, '2026-08-25-Tuesday');
   eq('without that plugin there is nothing to offer', datePicks('today', null).length, 0);

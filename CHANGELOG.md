@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.25.1
+
+- **A phrase it cannot read is no longer offered as `[[Invalid date]]`.** Natural Language Dates does not return nothing for a phrase it fails on — it returns one, formatted, reading *Invalid date*, because that is what a moment that failed prints. Taken at face value it looked like a date, was offered as one, and went into the note as a broken wikilink recording only that a parser had shrugged. The moment is now asked whether it worked, rather than its output being read as though it had.
+- This is what `@明日` did, on a vault whose Natural Language Dates reads English.
+
 ### 0.25.0
 
 - **A date in plain language, if you have Natural Language Dates.** Type `@next friday` in the composer, or press the new **Date** button, and pick the date it resolves to. The suggestion shows both the phrase and the date, so what was understood is visible before it is committed.

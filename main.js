@@ -832,14 +832,35 @@ function datePicks(query, parse) {
   for (const phrase of phrases) {
     let date = '';
     try {
-      const got = parse(phrase);
-      date = got && got.formattedString ? String(got.formattedString).trim() : '';
+      date = usableDate(parse(phrase));
     } catch (e) {
       date = '';
     }
     if (date) out.push({ phrase, date });
   }
   return out;
+}
+
+/**
+ * The date out of a parse, or '' when there is not one.
+ *
+ * A phrase it cannot read does not come back as nothing: it comes back
+ * formatted, as the string "Invalid date", because that is what a moment that
+ * failed prints. Taken at face value it reads as a date, is offered as one,
+ * and ends up in the note as `[[Invalid date]]` — a broken link, written by
+ * us, recording only that a parser once shrugged.
+ *
+ * So the moment is asked whether it worked, rather than its output being
+ * read as though it had. The two checks after it are for a parser that
+ * answers without one.
+ */
+function usableDate(got) {
+  if (!got) return '';
+  if (got.moment && typeof got.moment.isValid === 'function' && !got.moment.isValid()) return '';
+  if (got.date instanceof Date && isNaN(got.date.getTime())) return '';
+  const text = got.formattedString == null ? '' : String(got.formattedString).trim();
+  if (!text || /^invalid date$/i.test(text)) return '';
+  return text;
 }
 
 /** Every tag in the vault, from file caches. Sorted, without the leading #. */
@@ -6510,6 +6531,7 @@ module.exports.applyTagPick = applyTagPick;
 module.exports.dateQueryAt = dateQueryAt;
 module.exports.applyDatePick = applyDatePick;
 module.exports.datePicks = datePicks;
+module.exports.usableDate = usableDate;
 module.exports.collectTags = collectTags;
 module.exports.filterTags = filterTags;
 module.exports.CALLOUT_NOTE_TEMPLATE = CALLOUT_NOTE_TEMPLATE;
