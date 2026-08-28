@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.25.4
+
+- **Cards appear on passages inside a callout.** They never had. A callout keeps its background inside its own corners by clipping whatever its contents draw outside it — and a card is drawn outside its block by design, reaching past it into the gutter. So the card was not misplaced, it was cut off: the marker showed, the sidebar listed the linknote, and the margin stayed empty. A callout that carries a card is now opened up, and only that one; the class saying so is put there by the code that hangs the card, so no callout without a linknote is touched.
+- A marker on a **list item inside a callout** now hangs its card on the callout rather than the item, which is what the sizer considers the block anyway and what a paragraph in a callout has always used. Hung on the item, the card started inside the callout's padding and sat short of the gutter the other cards line up along.
+
 ### 0.25.3
 
 - **Cards come back when the marks do.** Returning from *Nothing at all* to *Everything* left the gutter reserved and empty: a card that is not drawn is not measured either, and where a card goes is decided by measuring — the pane's width against the card's, the height of the stack above it. Every number those decisions rested on had been taken while each box was nothing by nothing. Changing the level now re-draws, re-places and re-sizes the cards, as turning them on in settings already did.

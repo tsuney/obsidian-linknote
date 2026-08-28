@@ -926,11 +926,19 @@ function filterTags(tags, query, limit) {
  * hung the card off the view itself and put it off the side of the screen.
  * Turning cards off and on again was enough to see it: everything is rebuilt
  * by the sweep, and nothing came back.
+ *
+ * A callout is the exception to the list item. A card is placed against its
+ * host and then reaches past it into the gutter, and a callout clips what its
+ * contents draw outside it — it has to, to keep its background inside its own
+ * corners. A card hung on a list item inside one is therefore not misplaced
+ * but invisible: the marker shows, the sidebar lists it, and the margin stays
+ * empty. So inside a callout the callout is the block, which is what the
+ * sizer considers it anyway, and what a paragraph in one has always used.
  */
 function hostBlockOf(a, fallback) {
   try {
     const li = a.closest && a.closest('li');
-    if (li) return li;
+    if (li && !(li.closest && li.closest('.callout'))) return li;
 
     const sizer = a.closest && a.closest('.markdown-preview-sizer, .markdown-preview-view, .markdown-rendered');
     if (sizer) {

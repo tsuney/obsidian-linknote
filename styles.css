@@ -553,6 +553,26 @@ body.is-mobile .markdown-rendered li.lkn-anchored::before {
 }
 
 /*
+ * A callout keeps its background inside its own corners by clipping whatever
+ * its contents draw outside it — and a card is drawn outside it by design: it
+ * is placed against its block and then reaches past it into the gutter. So a
+ * card in a callout was not misplaced, it was cut off. The marker showed, the
+ * sidebar listed it, and the margin stayed empty.
+ *
+ * Only a callout that actually carries one is opened up, and the class saying
+ * so is put there by the same code that hangs the card. Nothing is asked of
+ * :has(), and no callout without a linknote is touched. The callout's own
+ * background still stops at its corners, which is what border-radius does;
+ * overflow only ever governed the children.
+ */
+.markdown-preview-view .callout.lkn-has-card,
+.markdown-rendered .callout.lkn-has-card,
+.markdown-preview-view .callout.lkn-has-card > .callout-content,
+.markdown-rendered .callout.lkn-has-card > .callout-content {
+  overflow: visible;
+}
+
+/*
  * A stack pushed down to clear the one above it no longer sits beside its own
  * block. This traces the distance it moved, so the block it belongs to can be
  * followed up the line. Nothing is drawn when it did not move.
