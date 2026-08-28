@@ -1141,7 +1141,36 @@ function markerMatch(text, marker) {
   const m = String(marker == null ? '' : marker).trim();
   if (m && t === m) return 'exact';
   if (/\s/.test(t)) return 'no';
-  return Array.from(t).length <= 4 ? 'maybe' : 'no';
+  return markCount(t) <= 4 ? 'maybe' : 'no';
+}
+
+/**
+ * How many marks a string draws, rather than how many code points it holds.
+ *
+ * An emoji is regularly several: a zero-width joiner between the parts, a
+ * skin tone, a variation selector, the tag characters a flag is spelled out
+ * with. Counted as code points, a marker somebody actually picked — 🙆‍♀️ is
+ * four, a family is five, a flag is seven — reads as prose rather than as a
+ * mark, and a linknote made on that device could not be removed from here.
+ */
+function markCount(text) {
+  const value = String(text == null ? '' : text);
+  if (!value) return 0;
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+      let n = 0;
+      // eslint-disable-next-line no-unused-vars
+      for (const piece of new Intl.Segmenter().segment(value)) n++;
+      return n;
+    }
+  } catch (e) {
+    /* older engines: fall through and count what is left without the joins */
+  }
+  const bare = value.replace(
+    /[\u200d\ufe0e\ufe0f\u{1f3fb}-\u{1f3ff}\u{e0020}-\u{e007f}]/gu,
+    ''
+  );
+  return Array.from(bare).length;
 }
 
 function utf8Size(ch) {
@@ -6638,6 +6667,7 @@ module.exports.stripBlockIdFromLine = stripBlockIdFromLine;
 module.exports.removeAnchor = removeAnchor;
 module.exports.changedLine = changedLine;
 module.exports.markerMatch = markerMatch;
+module.exports.markCount = markCount;
 module.exports.markerOfLink = markerOfLink;
 module.exports.blockOccurrences = blockOccurrences;
 module.exports.spliceAnchored = spliceAnchored;

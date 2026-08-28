@@ -230,7 +230,11 @@ function makeSnapshot(app, sourcePath, selection, blockLineStart, blockLineEnd, 
     sourcePath,
     blockSrc: o.noBlockSrc
       ? ''
-      : text.split('\n').slice(blockLineStart, blockLineEnd + 1).join('\n'),
+      : text
+          .split('\n')
+          .slice(blockLineStart, blockLineEnd + 1)
+          .map((line) => line.replace(/\r$/, ''))
+          .join('\n'),
   };
 }
 
@@ -1003,6 +1007,95 @@ async function main() {
     check('the second stack went with its card', second.stack.parentElement === null);
     check('and its host is no longer marked', !second.li._classes.has('lkn-has-card'));
     check('a different linknote is untouched', other.card.parentElement === other.stack);
+  }
+
+  console.log('\n35. a note saved with CRLF line endings');
+  {
+    // The hazard is the first write to such a note: nothing has rewritten it
+    // yet, so the carriage returns are still there when the marker goes in.
+    const src = 'Windows handbook.md';
+    const crlf =
+      '# Handbook\r\n' +
+      '\r\n' +
+      'The quarterly close lands on the tenth business day. ^oldid\r\n' +
+      '\r\n' +
+      'Expenses are filed weekly.\r\n' +
+      '\r\n' +
+      'A paragraph with no ID of its own.\r\n';
+    const app = makeApp({ [src]: crlf });
+    const p = makePlugin(app, {});
+    await p.loadSettings();
+
+    const snap = makeSnapshot(app, src, 'the tenth business day', 2, 2);
+    const { file } = await p.createLinknote(snap, { title: 'Close date', body: 'Confirmed.' });
+    const noteName = file.path.split('/').pop().replace(/\.md$/, '');
+    const source = app._store.get(src);
+
+    const ids = source.match(/\^[A-Za-z0-9-]+/g) || [];
+    eq('the existing block ID is the only one', ids.length, 1);
+    eq('and it is still the one that was there', ids[0], '^oldid');
+    check(
+      'the linknote is named after the ID it found',
+      file.path.endsWith('_oldid.md'),
+      '    got: ' + file.path
+    );
+    eq(
+      'the marker goes in front of the ID it kept',
+      source.split('\r\n')[2],
+      'The quarterly close lands on the tenth business day. [[' + noteName + '|†]] ^oldid'
+    );
+    eq('the note is still CRLF throughout', /[^\r]\n/.test(source), false);
+    check('every other line is untouched', source.includes('\r\nExpenses are filed weekly.\r\n'));
+
+    // And a paragraph with no ID of its own still gets a new one.
+    const snap2 = makeSnapshot(app, src, 'no ID of its own', 6, 6);
+    const second = await p.createLinknote(snap2, { title: 'Second', body: 'Also confirmed.' });
+    const after = app._store.get(src);
+    const allIds = after.match(/\^[A-Za-z0-9-]+/g) || [];
+    eq('a second linknote adds exactly one more ID', allIds.length, 2);
+    eq('the first one is untouched', allIds[0], '^oldid');
+    eq('and the note is still CRLF', /[^\r]\n/.test(after), false);
+    check(
+      'the second marker landed on its own paragraph',
+      after.split('\r\n')[6].startsWith('A paragraph with no ID of its own. [['),
+      '    got: ' + JSON.stringify(after.split('\r\n')[6])
+    );
+    check('the second linknote exists', !!app._store.get(second.file.path));
+  }
+
+  console.log('\n36. removing a linknote from a CRLF note');
+  {
+    const src = 'Windows handbook.md';
+    const app = makeApp({
+      [src]:
+        '# Handbook\r\n\r\nThe close lands on the tenth. ^keepme\r\n\r\nTail.\r\n',
+    });
+    const p = makePlugin(app, {});
+    await p.loadSettings();
+
+    const snap = makeSnapshot(app, src, 'the tenth', 2, 2);
+    const { file } = await p.createLinknote(snap, { title: 'Close', body: 'Confirmed.' });
+
+    const plan = await p.planRemoval(app.vault.getAbstractFileByPath(src), app.vault.getAbstractFileByPath(file.path));
+    check('a plan can be made', plan.ok, '    reason: ' + plan.reason);
+    if (plan.ok) {
+      // Nothing else in this vault points at ^keepme, so it goes with the
+      // marker — even though it was in the note before Linknote saw it. The
+      // dialog says so, and now shows the line it is about to change.
+      eq('an unreferenced block ID goes with the marker', plan.dropBlockId, true);
+      const line = LinknotePlugin.changedLine
+        ? LinknotePlugin.changedLine(plan.before, plan.after)
+        : require(path.join(__dirname, '..', 'main.js')).changedLine(plan.before, plan.after);
+      eq('the line shown carries no carriage return', /\r/.test(line.was + line.now), false);
+      await p.applyRemoval(plan);
+      const back = app._store.get(src);
+      eq(
+        'the marker is gone and the line endings are intact',
+        back,
+        '# Handbook\r\n\r\nThe close lands on the tenth.\r\n\r\nTail.\r\n'
+      );
+      eq('with no line left in LF', /[^\r]\n/.test(back), false);
+    }
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

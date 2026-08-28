@@ -1861,5 +1861,28 @@ console.log('\nchat — a name is one line, of bounded length');
   eq('with the name flattened', text.indexOf('Yamada Sato') !== -1, true);
 }
 
+console.log('\nmarkers — an emoji is one mark, however it is spelled');
+{
+  const { markCount, markerMatch, removeAnchor, linkNamesFor } = m;
+  eq('a dagger', markCount('\u2020'), 1);
+  eq('an emoji with a joiner and a sign', markCount('\u{1F646}\u200d\u2640\ufe0f'), 1);
+  eq('a family', markCount('\u{1F468}\u200d\u{1F469}\u200d\u{1F467}'), 1);
+  eq('a skin tone', markCount('\u{1F44D}\u{1F3FD}'), 1);
+  eq('a flag', markCount('\u{1F1EF}\u{1F1F5}'), 1);
+  eq('four letters', markCount('note'), 4);
+  eq('five letters', markCount('abcde'), 5);
+  eq('nothing', markCount(''), 0);
+
+  eq('a joined emoji reads as a marker', markerMatch('\u{1F646}\u200d\u2640\ufe0f', ''), 'maybe');
+  eq('a family does too', markerMatch('\u{1F468}\u200d\u{1F469}\u200d\u{1F467}', ''), 'maybe');
+  eq('prose still does not', markerMatch('see the handbook', ''), 'no');
+
+  // A linknote written on a device whose marker is a joined emoji has to be
+  // removable from a device whose marker is something else entirely.
+  const names = linkNamesFor('Linknotes/Handbook_k3n8v1.md');
+  const theirs = 'The close. [[Handbook_k3n8v1|\u{1F468}\u200d\u{1F469}\u200d\u{1F467}]] ^k3n8v1';
+  eq("another device's emoji marker comes out", removeAnchor(theirs, names, true, '\u2020').ok, true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
