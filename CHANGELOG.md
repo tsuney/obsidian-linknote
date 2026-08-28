@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.25.2
+
+- **The Enter that confirms a Japanese conversion is no longer taken as a pick.** Typing `@明日` produced `[[2026-08-28-Friday]] 明日明日`: the suggestion list was open on *today*, the input method's confirming Enter arrived as an ordinary keydown, the list acted on it, and then the composition committed its own text anyway. Nothing is offered or picked while a composition is in progress — the keys and the half-formed text belong to the input method until it has finished.
+- **This was in the tag list too**, and had been since tags were added: a tag typed in Japanese would have gone the same way. Neither list had ever been tried in a language that needs an input method.
+
 ### 0.25.1
 
 - **A phrase it cannot read is no longer offered as `[[Invalid date]]`.** Natural Language Dates does not return nothing for a phrase it fails on — it returns one, formatted, reading *Invalid date*, because that is what a moment that failed prints. Taken at face value it looked like a date, was offered as one, and went into the note as a broken wikilink recording only that a parser had shrugged. The moment is now asked whether it worked, rather than its output being read as though it had.

@@ -270,7 +270,7 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
 
-### 0.25.1
+### 0.25.2
 
 - Dates in plain language in the composer, using Natural Language Dates when it is installed. Linknote holds no date settings of its own — the format, the wikilink and the trigger are read from that plugin.
 

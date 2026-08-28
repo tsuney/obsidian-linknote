@@ -773,6 +773,26 @@ function nlDates(app) {
   }
 }
 
+/**
+ * Whether a key event belongs to an input method rather than to us.
+ *
+ * Typing Japanese, Chinese or Korean goes through a composition: the keys
+ * build a reading, and Enter confirms the conversion. That Enter is the input
+ * method's, not a choice from any list we are showing — but it arrives as an
+ * ordinary keydown, and a suggestion list that acts on it steals the
+ * confirmation. What lands is our pick followed by the text the composition
+ * commits anyway.
+ *
+ * `isComposing` says so where it exists. The keyCode is the older signal for
+ * the same thing, kept because a wrong answer here is not a missing feature
+ * but text nobody typed.
+ */
+function imeBusy(evt) {
+  if (!evt) return false;
+  if (evt.isComposing === true) return true;
+  return evt.keyCode === 229;
+}
+
 /** For a trigger that is used inside a regular expression. */
 function escapeRe(text) {
   return String(text == null ? '' : text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -5408,10 +5428,25 @@ class LinknoteModal extends Modal {
       });
     }
 
-    bodyInput.addEventListener('input', () => refreshSuggest(true));
+    // While an input method is composing, the keys and the half-formed text
+    // belong to it. Nothing is offered until it has finished.
+    let composing = false;
+    bodyInput.addEventListener('compositionstart', () => {
+      composing = true;
+      closeSuggest();
+    });
+    bodyInput.addEventListener('compositionend', () => {
+      composing = false;
+      refreshSuggest(true);
+    });
+
+    bodyInput.addEventListener('input', () => {
+      if (!composing) refreshSuggest(true);
+    });
     bodyInput.addEventListener('click', () => refreshSuggest(true));
     bodyInput.addEventListener('blur', () => window.setTimeout(closeSuggest, 120));
     bodyInput.addEventListener('keydown', (evt) => {
+      if (imeBusy(evt)) return;
       if (!matches.length) return;
       if (evt.key === 'ArrowDown') {
         evt.preventDefault();
@@ -6532,6 +6567,7 @@ module.exports.dateQueryAt = dateQueryAt;
 module.exports.applyDatePick = applyDatePick;
 module.exports.datePicks = datePicks;
 module.exports.usableDate = usableDate;
+module.exports.imeBusy = imeBusy;
 module.exports.collectTags = collectTags;
 module.exports.filterTags = filterTags;
 module.exports.CALLOUT_NOTE_TEMPLATE = CALLOUT_NOTE_TEMPLATE;

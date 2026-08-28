@@ -470,6 +470,24 @@ console.log('\nthe date being typed at the caret');
   }
 }
 
+console.log('\nkeys that belong to an input method');
+{
+  const { imeBusy } = m;
+  // What shipped broken in 0.25.0 and 0.25.1: typing @明日 with a Japanese
+  // input method, the Enter that confirms the conversion was taken as a pick
+  // from the suggestion list. The list inserted today, the composition then
+  // committed its own text, and the note got both.
+  check('an Enter that confirms a conversion is not ours',
+    imeBusy({ key: 'Enter', isComposing: true }));
+  check('nor is one an older engine only marks with a keyCode',
+    imeBusy({ key: 'Enter', keyCode: 229 }));
+  check('an ordinary Enter is ours', !imeBusy({ key: 'Enter', isComposing: false, keyCode: 13 }));
+  check('so is an Enter that says nothing either way', !imeBusy({ key: 'Enter' }));
+  check('arrow keys during a composition are not ours',
+    imeBusy({ key: 'ArrowDown', isComposing: true }));
+  check('and no event at all is nobody\'s', !imeBusy(null));
+}
+
 console.log('\ncollecting the vault tags');
 eq('inline and property tags are merged and sorted',
   m.collectTags([
