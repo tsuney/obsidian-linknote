@@ -221,6 +221,10 @@ const NOTICE_SHOWN_MS = 20000;
 // How many "who on whose notes" lines one chat message lists before the rest
 // are summed up. A notice that scrolls is not read.
 const CHAT_MAX_LINES = 8;
+// How much of a name goes out. A name comes from a note property, which in a
+// shared vault anyone can write; a line of a message is not the place to find
+// out how long it was.
+const CHAT_NAME_MAX = 60;
 // How long after this device writes a linknote file its own create and modify
 // events are ignored. Well past any burst of events one write can raise.
 const SELF_WRITE_MS = 10000;
@@ -605,7 +609,7 @@ function linkDisplayText(raw) {
   return md ? md[1].trim() : '';
 }
 
-function removeLinkFromLine(line, names) {
+function removeLinkFromLine(line, names, marker) {
   const value = String(line == null ? '' : line);
   const wanted = (names || []).map(normaliseLinkTarget);
 
@@ -623,12 +627,18 @@ function removeLinkFromLine(line, names) {
   }
   if (!found.length) return { line: value, removed: false, count: 0 };
 
-  // With more than one, the marker is the one that looks like a marker. If
-  // that is still not a single link, the caller is told and stops.
-  let hits = found;
+  // Only a link that reads as a marker is one. Pointing at the linknote is
+  // not enough on its own: a line may mention the note in its prose, and
+  // taking that out leaves a sentence with a hole in it and, if the line
+  // carried a block ID, no block ID either. Nothing removed is recoverable;
+  // a mangled sentence in someone else's note is not.
+  let hits = found.filter((h) => markerMatch(h.text, marker) !== 'no');
+  if (!hits.length) return { line: value, removed: false, count: 0 };
+
+  // With more than one, prefer the one written with this device's marker.
   if (hits.length > 1) {
-    const markerish = hits.filter((h) => markerMatch(h.text, '') === 'maybe');
-    if (markerish.length === 1) hits = markerish;
+    const exact = hits.filter((h) => markerMatch(h.text, marker) === 'exact');
+    if (exact.length === 1) hits = exact;
   }
   if (hits.length > 1) return { line: value, removed: false, count: hits.length };
 
@@ -645,7 +655,11 @@ function blockIdOfLine(line) {
 }
 
 function stripBlockIdFromLine(line) {
-  return String(line == null ? '' : line).replace(BLOCK_ID_RE, '');
+  const value = String(line == null ? '' : line);
+  // The ID goes; the line ending it sat in front of stays, or this one line
+  // would be written back in a different ending from the rest of the note.
+  const cr = /\r$/.test(value) ? '\r' : '';
+  return value.replace(BLOCK_ID_RE, '') + cr;
 }
 
 /**
@@ -655,12 +669,12 @@ function stripBlockIdFromLine(line) {
  * to be found, and found once. A line left holding nothing goes with it —
  * that is the heading case, where the marker sits on a line of its own.
  */
-function removeAnchor(content, names, dropBlockId) {
+function removeAnchor(content, names, dropBlockId, marker) {
   const lines = String(content == null ? '' : content).split('\n');
   const hits = [];
   let crowded = false;
   for (let i = 0; i < lines.length; i++) {
-    const out = removeLinkFromLine(lines[i], names);
+    const out = removeLinkFromLine(lines[i], names, marker);
     if (out.removed) hits.push(i);
     else if (out.count > 1) crowded = true;
   }
@@ -670,9 +684,12 @@ function removeAnchor(content, names, dropBlockId) {
   if (hits.length > 1) return { ok: false, reason: 'ambiguous', content: null, blockId: '' };
 
   const at = hits[0];
-  const stripped = removeLinkFromLine(lines[at], names).line;
+  const stripped = removeLinkFromLine(lines[at], names, marker).line;
   const blockId = blockIdOfLine(stripped);
-  const next = (dropBlockId && blockId ? stripBlockIdFromLine(stripped) : stripped).replace(/[ \t]+$/, '');
+  const next = (dropBlockId && blockId ? stripBlockIdFromLine(stripped) : stripped).replace(
+    /[ \t]+(\r?)$/,
+    '$1'
+  );
 
   if (!next.trim()) {
     lines.splice(at, 1);
@@ -685,6 +702,24 @@ function removeAnchor(content, names, dropBlockId) {
   }
 
   return { ok: true, reason: '', content: lines.join('\n'), blockId };
+}
+
+/**
+ * The one line a removal changes, as it reads now and as it would read.
+ *
+ * Saying "nothing else is touched" is a claim about the result, and a reader
+ * has no way to check it. Showing the line is the same claim, checkable.
+ */
+function changedLine(before, after) {
+  const a = String(before == null ? '' : before).split('\n');
+  const b = String(after == null ? '' : after).split('\n');
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a[i] === b[i]) i++;
+  if (i >= a.length && i >= b.length) return null;
+  const was = (a[i] == null ? '' : a[i]).replace(/\r$/, '');
+  const now = i < b.length && b.length >= a.length ? b[i].replace(/\r$/, '') : '';
+  return { was, now, gone: b.length < a.length };
 }
 
 /** Everything after the frontmatter block, or the whole text if there is none. */
@@ -992,6 +1027,16 @@ function blockOccurrences(content, block) {
   const needle = String(block == null ? '' : block);
   if (!needle) return [];
 
+  const out = wholeLineMatches(text, needle);
+  if (out.length || needle.indexOf('\n') === -1) return out;
+  // The block was read line by line, so it holds none of the \r a note saved
+  // with CRLF endings puts before each newline. Ask again in that spelling —
+  // the offsets come back against the real text either way.
+  if (text.indexOf('\r\n') === -1) return out;
+  return wholeLineMatches(text, needle.split('\n').join('\r\n'));
+}
+
+function wholeLineMatches(text, needle) {
   const out = [];
   let at = text.indexOf(needle);
   while (at !== -1) {
@@ -1021,6 +1066,11 @@ function blockOccurrences(content, block) {
  */
 function spliceAnchored(data, at, len, blockSrc, anchored) {
   const text = String(data == null ? '' : data);
+  // Whatever the note ends its lines with, the replacement ends them with —
+  // otherwise a note saved with CRLF endings comes back with one paragraph in
+  // LF, which some editors show as a single run-on line.
+  const eol = text.slice(at, at + len).indexOf('\r\n') !== -1 ? '\r\n' : '\n';
+  const written = eol === '\n' ? anchored : anchored.split('\n').join('\r\n');
   // Read from the result rather than by slicing at the old length: the block
   // may have had trailing spaces, which buildAnchoredBlock trims away.
   const ownLine = /\n\n[^\n]*$/.test(anchored);
@@ -1030,9 +1080,9 @@ function spliceAnchored(data, at, len, blockSrc, anchored) {
     const next = rest.replace(/^\r?\n/, '');
     const started = next !== rest;
     const firstLine = next.split('\n')[0];
-    if (started && firstLine.trim()) rest = '\n' + rest;
+    if (started && firstLine.trim()) rest = eol + rest;
   }
-  return text.slice(0, at) + anchored + rest;
+  return text.slice(0, at) + written + rest;
 }
 
 /**
@@ -1160,8 +1210,13 @@ function previewFilename(settings, now) {
 // A block ID is either appended to the line it names, or written on the line
 // below it — Obsidian's own form for a table or a code block. Both have to be
 // recognised, or an existing ID is treated as ordinary text and destroyed.
-const BLOCK_ID_RE = /[ \t]+\^([A-Za-z0-9-]+)[ \t]*$/;
-const BLOCK_ID_LINE_RE = /^[ \t]*\^([A-Za-z0-9-]+)[ \t]*$/;
+// A note saved with CRLF endings carries a \r at the end of every line, and a
+// block ID is still a block ID with one behind it. Read strictly, the ID went
+// unseen and a second one was appended to the same line — which takes the
+// first out of the end position Obsidian reads it in, silently breaking every
+// [[Note#^id]] pointing here.
+const BLOCK_ID_RE = /[ \t]+\^([A-Za-z0-9-]+)[ \t\r]*$/;
+const BLOCK_ID_LINE_RE = /^[ \t]*\^([A-Za-z0-9-]+)[ \t\r]*$/;
 
 /* --------------------------------------------------------------------------
  * Anchoring (pure functions — covered by tests)
@@ -2814,12 +2869,13 @@ class LinknotePlugin extends Plugin {
       return { ok: false, reason: 'unreadable' };
     }
 
-    const found = removeAnchor(content, names, false);
+    const marker = this.settings.marker;
+    const found = removeAnchor(content, names, false, marker);
     if (!found.ok) return { ok: false, reason: found.reason };
 
     const blockId = found.blockId;
     const dropBlockId = !!blockId && this.blockIdIsUnused(sourceFile, blockId, noteFile.path);
-    const result = dropBlockId ? removeAnchor(content, names, true) : found;
+    const result = dropBlockId ? removeAnchor(content, names, true, marker) : found;
 
     return {
       ok: true,
@@ -3527,7 +3583,11 @@ class LinknotePlugin extends Plugin {
     try {
       const info = ctx.getSectionInfo(ctxEl);
       if (!info || typeof info.text !== 'string') return '';
-      return info.text.split('\n').slice(info.lineStart, info.lineEnd + 1).join('\n');
+      return info.text
+        .split('\n')
+        .slice(info.lineStart, info.lineEnd + 1)
+        .map((line) => line.replace(/\r$/, ''))
+        .join('\n');
     } catch (e) {
       return '';
     }
@@ -3964,8 +4024,18 @@ class LinknotePlugin extends Plugin {
     if (this.strayChat) {
       const rescued = safeWebhook(this.strayChat.chatWebhook);
       if (rescued && !this.chat.webhook) {
-        this.chat = { on: !!this.strayChat.chatNotify, webhook: rescued };
+        // Adopted switched off, whatever the old setting said. In a shared
+        // vault that address arrived here through sync from whoever set it,
+        // and starting to post to someone else's channel from a device that
+        // was never given an address is the thing keeping it off the vault
+        // was meant to prevent.
+        this.chat = { on: false, webhook: rescued };
         this.saveChatConfig();
+        new Notice(
+          'Linknote: a chat address from an earlier version was moved onto this device. ' +
+            'Nothing is posted until you switch it on in settings.',
+          10000
+        );
       }
       this.strayChat = null;
       this.saveSettings();
@@ -4646,7 +4716,9 @@ function authorOf(frontmatter) {
   const raw = frontmatter && frontmatter.author;
   if (raw == null) return '';
   const text = Array.isArray(raw) ? raw.filter(Boolean).join(', ') : String(raw);
-  return text.trim();
+  // A name arrives from a note anyone sharing the vault can write. Whatever
+  // it holds, it is one line by the time anything is done with it.
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -4875,8 +4947,8 @@ function chatText(changes) {
   // of the text, so nothing about what was said leaves the vault.
   const pairs = new Map();
   for (const change of list) {
-    const who = String(change.author || '').trim() || '(no author)';
-    const whose = String(change.noteAuthor || '').trim();
+    const who = chatName(change.author) || '(no author)';
+    const whose = chatName(change.noteAuthor);
     const key = who + '\u0000' + whose;
     pairs.set(key, (pairs.get(key) || 0) + 1);
   }
@@ -4896,6 +4968,15 @@ function chatText(changes) {
 
   const n = list.length;
   return 'Linknote — ' + n + (n === 1 ? ' linknote' : ' linknotes') + '\n' + lines.join('\n');
+}
+
+/**
+ * A name as it goes out. Names come from note properties, which anyone
+ * sharing the vault can write, so what leaves is one line of bounded length
+ * rather than whatever was typed there.
+ */
+function chatName(value) {
+  return clampChars(String(value == null ? '' : value).replace(/\s+/g, ' ').trim(), CHAT_NAME_MAX);
 }
 
 /**
@@ -5241,6 +5322,20 @@ class LinknoteRemoveModal extends Modal {
         text: 'The block ID ^' + this.plan.blockId + ' stays: something else in the vault points at it.',
       });
     }
+    const change = changedLine(this.plan.before, this.plan.after);
+    if (change) {
+      const shown = contentEl.createDiv({ cls: 'lkn-remove-diff' });
+      const was = shown.createDiv({ cls: 'lkn-remove-was' });
+      was.createSpan({ cls: 'lkn-remove-tag', text: 'now' });
+      was.createSpan({ cls: 'lkn-remove-text', text: change.was });
+      const now = shown.createDiv({ cls: 'lkn-remove-now' });
+      now.createSpan({ cls: 'lkn-remove-tag', text: 'after' });
+      now.createSpan({
+        cls: 'lkn-remove-text',
+        text: change.gone ? '(the line goes with it)' : change.now,
+      });
+    }
+
     contentEl.createDiv({
       cls: 'lkn-hint',
       text: 'Nothing else in either note is touched.',
@@ -6488,7 +6583,8 @@ class LinknoteSettingTab extends PluginSettingTab {
       .setName('Send a test message')
       .setDesc(
         'Posts one line now, so you can see it arrive before relying on it. What a real message ' +
-          'says is the count and the authors — never a note name and never any of the text.'
+          'says is the count and the authors — never a note name and never any of the text. ' +
+          'Authors are people, so what leaves the vault is their names.'
       )
       .addButton((b) =>
         b.setButtonText('Send').onClick(async () => {
@@ -6538,7 +6634,9 @@ module.exports.normaliseLinkTarget = normaliseLinkTarget;
 module.exports.linkNamesFor = linkNamesFor;
 module.exports.removeLinkFromLine = removeLinkFromLine;
 module.exports.blockIdOfLine = blockIdOfLine;
+module.exports.stripBlockIdFromLine = stripBlockIdFromLine;
 module.exports.removeAnchor = removeAnchor;
+module.exports.changedLine = changedLine;
 module.exports.markerMatch = markerMatch;
 module.exports.markerOfLink = markerOfLink;
 module.exports.blockOccurrences = blockOccurrences;
@@ -6561,6 +6659,7 @@ module.exports.printMode = printMode;
 module.exports.noteMarks = noteMarks;
 module.exports.nextMarks = nextMarks;
 module.exports.chatText = chatText;
+module.exports.chatName = chatName;
 module.exports.safeWebhook = safeWebhook;
 module.exports.sanitizeChatConfig = sanitizeChatConfig;
 module.exports.chatIsLive = chatIsLive;

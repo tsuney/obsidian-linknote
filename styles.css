@@ -165,6 +165,50 @@ body.is-mobile .lkn-modal-mobile .lkn-buttons {
   margin-bottom: 2px;
 }
 
+/*
+ * The one line a removal changes, before and after. Saying "nothing else is
+ * touched" is a claim the reader cannot check; the line is the same claim in
+ * a form they can. Scrolls sideways rather than wrapping, so the shape of the
+ * line — where the marker sits, where the block ID sits — stays readable.
+ */
+.lkn-modal .lkn-remove-diff {
+  margin: 0 0 10px 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  overflow-x: auto;
+}
+
+.lkn-modal .lkn-remove-was,
+.lkn-modal .lkn-remove-now {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  white-space: pre;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
+.lkn-modal .lkn-remove-was {
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.lkn-modal .lkn-remove-now {
+  color: var(--text-normal);
+}
+
+.lkn-modal .lkn-remove-tag {
+  flex: 0 0 auto;
+  min-width: 3.2em;
+  font-family: var(--font-interface);
+  color: var(--text-faint);
+}
+
+.lkn-modal .lkn-remove-text {
+  flex: 1 1 auto;
+}
+
 .lkn-modal .lkn-buttons button.mod-warning {
   background-color: var(--background-modifier-error);
   color: var(--text-on-accent);

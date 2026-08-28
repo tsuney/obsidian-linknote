@@ -1708,5 +1708,158 @@ console.log('\nupdate notices — the read state is checked before use');
   eq('a told that is not a map is an empty one', Object.keys(mixed.told).length, 0);
 }
 
+console.log('\nCRLF notes — a block ID with a carriage return behind it');
+{
+  const { existingBlockId, blockIdOfLine, stripBlockIdFromLine, buildAnchoredBlock } = m;
+  const { blockOccurrences, spliceAnchored, removeAnchor, linkNamesFor } = m;
+
+  // What readBlockSource hands over: the block, line by line, CR stripped.
+  const blockOf = (text, from, to) =>
+    text
+      .split('\n')
+      .slice(from, to + 1)
+      .map((line) => line.replace(/\r$/, ''))
+      .join('\n');
+
+  eq('an ID is still an ID with a CR behind it', existingBlockId('a line. ^oldid\r'), 'oldid');
+  eq('and on a line of its own', existingBlockId('| a |\r\n^oldid\r'), 'oldid');
+  eq('a line reads its ID through the CR', blockIdOfLine('a line. ^oldid\r'), 'oldid');
+  eq('taking the ID off leaves the CR', stripBlockIdFromLine('a line. ^oldid\r'), 'a line.\r');
+  eq('and takes nothing off an LF line', stripBlockIdFromLine('a line. ^oldid'), 'a line.');
+
+  const crlf = 'intro\r\nThe close lands on the tenth day. ^oldid\r\ntail\r\n';
+  const src = blockOf(crlf, 1, 1);
+  eq('the block comes over without its CR', src, 'The close lands on the tenth day. ^oldid');
+  eq('its ID is found', existingBlockId(src), 'oldid');
+
+  const anchored = buildAnchoredBlock(src, '[[N|+]]', '');
+  eq(
+    'the existing ID is kept, not doubled',
+    anchored,
+    'The close lands on the tenth day. [[N|+]] ^oldid'
+  );
+
+  const spots = blockOccurrences(crlf, src);
+  eq('a one-line block is found in a CRLF note', spots.length, 1);
+  eq(
+    'and is written back in CRLF',
+    spliceAnchored(crlf, spots[0].at, spots[0].len, src, anchored),
+    'intro\r\nThe close lands on the tenth day. [[N|+]] ^oldid\r\ntail\r\n'
+  );
+
+  const many = 'intro\r\n\r\nline one\r\nline two\r\n\r\ntail\r\n';
+  const manySrc = blockOf(many, 2, 3);
+  const manySpots = blockOccurrences(many, manySrc);
+  eq('a block of several lines is found too', manySpots.length, 1);
+  const manyOut = spliceAnchored(
+    many,
+    manySpots[0].at,
+    manySpots[0].len,
+    manySrc,
+    buildAnchoredBlock(manySrc, '[[N|+]]', 'newid')
+  );
+  eq(
+    'and comes back in CRLF throughout',
+    manyOut,
+    'intro\r\n\r\nline one\r\nline two [[N|+]] ^newid\r\n\r\ntail\r\n'
+  );
+  eq('with no line left in LF', /[^\r]\n/.test(manyOut), false);
+
+  eq(
+    'an LF note is still spliced in LF',
+    spliceAnchored('a\nb\n', 0, 1, 'a', 'a [[N|+]] ^id'),
+    'a [[N|+]] ^id\nb\n'
+  );
+
+  const names = linkNamesFor('Linknotes/Handbook_k3n8v1.md');
+  const gone = removeAnchor(
+    'intro\r\nThe close. [[Handbook_k3n8v1|+]] ^k3n8v1\r\ntail\r\n',
+    names,
+    true,
+    '+'
+  );
+  eq('a marker comes out of a CRLF note', gone.ok, true);
+  eq('with its ID', gone.blockId, 'k3n8v1');
+  eq('and the line endings intact', gone.content, 'intro\r\nThe close.\r\ntail\r\n');
+}
+
+console.log('\nremoval — only a link that reads as a marker is one');
+{
+  const { removeAnchor, removeLinkFromLine, linkNamesFor } = m;
+  const names = linkNamesFor('Linknotes/Handbook_k3n8v1.md');
+
+  const prose = 'The close lands on the tenth. See [[Handbook_k3n8v1]] for detail. ^k3n8v1';
+  const left = removeAnchor(prose, names, true, '+');
+  eq('a mention in prose is not a marker', left.ok, false);
+  eq('so nothing is removed', left.reason, 'not-found');
+
+  const alone = 'para one\n\n[[Handbook_k3n8v1]]\n\npara two';
+  eq('nor is one sitting on its own line', removeAnchor(alone, names, true, '+').ok, false);
+
+  const marked = 'The close lands on the tenth. [[Handbook_k3n8v1|+]] ^k3n8v1';
+  const out = removeAnchor(marked, names, true, '+');
+  eq('a marker is', out.ok, true);
+  eq('and takes its ID with it', out.content, 'The close lands on the tenth.');
+
+  const other = 'The close. [[Handbook_k3n8v1|†]] ^k3n8v1';
+  eq(
+    "another device's marker is one as well",
+    removeAnchor(other, names, true, '+').content,
+    'The close.'
+  );
+
+  const both = 'See [[Handbook_k3n8v1]] and [[Handbook_k3n8v1|+]] ^k3n8v1';
+  const picked = removeAnchor(both, names, true, '+');
+  eq('with a mention beside it, the marker is the one taken', picked.ok, true);
+  eq('and the mention stays', picked.content, 'See [[Handbook_k3n8v1]] and');
+
+  const two = 'See [[Handbook_k3n8v1|+]] and [[Handbook_k3n8v1|†]] here';
+  eq("two markers, one of them this device's", removeLinkFromLine(two, names, '+').removed, true);
+  eq('two markers and neither of them ours is ambiguous', removeLinkFromLine(two, names, 'x').count, 2);
+
+  const long = 'The close. [[Handbook_k3n8v1|see the handbook]] ^k3n8v1';
+  eq(
+    'a link whose text is prose is left alone',
+    removeAnchor(long, names, true, '+').reason,
+    'not-found'
+  );
+  eq(
+    'unless that is what this device writes',
+    removeAnchor(long, names, true, 'see the handbook').ok,
+    true
+  );
+}
+
+console.log('\nremoval — the line it changes is shown');
+{
+  const { changedLine } = m;
+  const was = changedLine('a\nThe close. [[N|+]] ^id\nb\n', 'a\nThe close.\nb\n');
+  eq('the line as it reads now', was.was, 'The close. [[N|+]] ^id');
+  eq('and as it would read', was.now, 'The close.');
+  eq('the line is not going', was.gone, false);
+
+  const dropped = changedLine('a\n\n[[N|+]]\n\nb\n', 'a\n\nb\n');
+  eq('a line that goes is said to go', dropped.gone, true);
+
+  eq('nothing changed is nothing to show', changedLine('a\nb\n', 'a\nb\n'), null);
+  eq('a CR is not shown', changedLine('a. ^id\r\nb', 'a.\r\nb').was, 'a. ^id');
+}
+
+console.log('\nchat — a name is one line, of bounded length');
+{
+  const { chatName, chatText, authorOf } = m;
+  eq('a plain name goes as it is', chatName('Tsuneyama'), 'Tsuneyama');
+  eq('a name with a line break is one line', chatName('Tsune\nyama'), 'Tsune yama');
+  eq('runs of space are one space', chatName('Tsune   yama'), 'Tsune yama');
+  eq('a very long name is cut', chatName('x'.repeat(200)).length <= 60, true);
+  eq('nothing is nothing', chatName(null), '');
+
+  eq('a property with a line break is one line too', authorOf({ author: 'a\nb' }), 'a b');
+
+  const text = chatText([{ author: 'Yamada\nSato', kind: 'new', noteAuthor: 'Tsuneyama' }]);
+  eq('and a message stays one line per pair', text.split('\n').length, 2);
+  eq('with the name flattened', text.indexOf('Yamada Sato') !== -1, true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,5 +1,26 @@
 # Changelog
 
+### 0.25.5
+
+Found by reading the whole plugin against the submission rules before submitting it. Two of these could quietly damage a note, and had been able to since the features were written.
+
+- **A block ID is no longer doubled in a note saved with CRLF line endings.** The ID was read strictly — spaces or tabs, then the caret, then the end of the line — and a carriage return sitting behind it meant no ID was seen. A second one was appended to the same line, which takes the first out of the end position Obsidian reads an ID in, and **every `[[Note#^id]]` pointing at it stops resolving**. Nothing errors; the links simply stop working. A block is now read line by line with its carriage returns taken off, found in the note in whichever spelling the note uses, and written back in the line ending it came from — a CRLF note stays a CRLF note, rather than acquiring one paragraph in LF.
+- **Removing a linknote no longer takes an ordinary mention out of your prose.** Any link pointing at the linknote counted as its marker. Where a line said *See [[Handbook_k3n8v1]] for detail.* and carried no marker, removal took the link — and, since the line ended in a block ID nothing else referenced, the block ID with it — leaving *See for detail.* Only a link that reads as a marker is one now: this device's marker character exactly, or short enough to be a mark rather than prose. Where a marker and a mention sit on the same line, the marker is the one taken. Where nothing reads as a marker, the removal stops and says so, which is what it already did whenever it could not tell.
+- **The removal dialog shows the line it is about to change**, as it reads now and as it would read. It said "nothing else in either note is touched", which is a claim about a result the reader has no way to check. The line is the same claim in a form they can.
+
+Two more about the chat notification, which is the one thing that leaves the vault.
+
+- **An address carried over from 0.22.0 no longer arrives switched on.** The webhook was moved out of the settings file and onto the device in 0.22.1, and the migration brought the old on/off switch with it. In a shared vault that settings file reaches everyone, so a device that had never been given an address could start posting to somebody else's channel — which is the thing keeping the address off the vault was meant to prevent. It is now adopted switched off, and says so.
+- **A name goes out as one line of bounded length.** Names come from note properties, which in a shared vault anyone can write.
+
+And the README now says what is true.
+
+- The opening claim was "stores nothing outside your vault". Two things are kept in this device's browser storage — which linknotes it has shown you, and the chat address — and both are there deliberately, because neither belongs in a shared vault. Saying so is better than the claim.
+- The chat notification is **desktop only**, which only the Japanese README said. What it sends is people's names, to a third-party service. The mention directory is a setting, so it lives in the vault and syncs — useful, and worth knowing, since colleagues' account names and phone numbers go in it.
+- Fixed: a setting named that does not exist, when rows are counted as read, what *Nothing at all* leaves behind, and a changelog excerpt that had fallen two releases behind. The excerpt is gone; this file is the changelog.
+
+The repository no longer carries a `_to_delete/` folder, which held a stale git lock file and a draft.
+
 ### 0.25.4
 
 - **Cards appear on passages inside a callout.** They never had. A callout keeps its background inside its own corners by clipping whatever its contents draw outside it — and a card is drawn outside its block by design, reaching past it into the gutter. So the card was not misplaced, it was cut off: the marker showed, the sidebar listed the linknote, and the margin stayed empty. A callout that carries a card is now opened up, and only that one; the class saying so is put there by the code that hangs the card, so no callout without a linknote is touched.

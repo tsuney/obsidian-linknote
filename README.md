@@ -13,7 +13,8 @@ The point is that your commentary lives in a separate, ordinary note. It shows u
 - Shows the linknotes of the note you are reading as cards beside the text, and as a list in the sidebar.
 - Shows which words each one is about, and points at them in the text.
 - Removes a linknote and its marker together, after saying exactly what will happen.
-- Nothing leaves your vault unless you ask it to. The plugin makes no network requests and stores nothing outside your vault, with one exception you turn on yourself: an optional chat notification, which posts a count and a list of authors — never a note name, never any text. It is off by default and has no address until you give it one.
+- Nothing leaves your vault unless you ask it to. The plugin makes no network requests, and writes nothing into your vault beyond the linknotes themselves and the markers that anchor them. Two things are kept in this device's own browser storage, where they cannot travel over sync: which linknotes it has already shown you, and — if you set one — the chat webhook address, which is a secret and belongs to a person rather than to a vault.
+- The one thing that can leave is a chat notification you turn on yourself, and it is **desktop only**. It posts a count and the names of the people who wrote the linknotes — never a note name, never any of the text. Those names are people's names, and the address you give it is a third-party service, so decide with that in mind. It is off by default and has no address until you give it one.
 
 ## How it works
 
@@ -136,7 +137,7 @@ Above the rows are a search box and an order. Typing narrows the list: every wor
 
 The cards answer "what is written here". The list answers "what has been written about this note, and where". On mobile it is the main answer, since a card has nowhere to go there.
 
-The list has a scope: **This note**, or **Whole vault**. The vault-wide list — the **Linknote inbox** — is for a shared vault: every linknote anyone has written, ordered recently-changed first by default, with a **Mark all read** button. Each row is headed by a dot while this device has not shown it yet, and by the marker of whoever wrote it once it has been read — one slot, never both. Rows in this-note scope are marked read as they are listed; the inbox marks a row read only when you open it.
+The list has a scope: **This note**, or **Whole vault**. The vault-wide list — the **Linknote inbox** — is for a shared vault: every linknote anyone has written, ordered recently-changed first by default, with a **Mark all read** button. Each row is headed by a dot while this device has not shown it yet, and by the marker of whoever wrote it once it has been read — one slot, never both. Rows are marked read the way cards are — by the tick, or by opening the linknote. Set **Count a linknote as read** to *When it is shown* and a this-note row clears itself as it is drawn; the inbox never does.
 
 ### Cards
 
@@ -148,7 +149,7 @@ The cards of one block are gathered behind a single rail. Where a group has to b
 
 Press the **–** on any card to stow them all. Each shrinks to a strip beside its passage, so you can still see which passages carry a note, and the text takes the room back. Pressing any strip brings them back, as does the command **Show or stow the linknote cards**. The state is remembered.
 
-To draw less, run **Cycle the marks**. *Markers, but no cards* keeps everything that says where a linknote is — the chips, the rules if you have them on, the button that makes new ones — and takes away the cards and the room made for them; the linknotes are read in the sidebar list instead, which still points at the passage when you press a row. *Nothing at all* goes further and leaves the note reading exactly as it would with the plugin uninstalled. Both apply in print as well as on screen.
+To draw less, run **Cycle the marks**. *Markers, but no cards* keeps everything that says where a linknote is — the chips, the rules if you have them on, the button that makes new ones — and takes away the cards and the room made for them; the linknotes are read in the sidebar list instead, which still points at the passage when you press a row. *Nothing at all* goes further and leaves the note reading as though it carried no annotation — the marker links included, which an uninstalled plugin would still show as ordinary links. Nothing is written to the note either way, so it is a way of reading, not a way of undoing. Both apply in print as well as on screen.
 
 Three things stay at every level. The button on a selection, because it belongs to writing a linknote rather than to the note, and without it the only way to write one is the command palette. The sidebar list and the ribbon icon, which is where the linknotes are read — press a row and it still points at the passage in the text. So a note can look completely untouched and still be annotated and read as usual.
 
@@ -175,7 +176,7 @@ A linknote is an ordinary note, which is the whole point. It appears in search, 
 
 With the shipped template, a Bases view over the `Linknotes` folder showing `source`, `author` and `body` gives you every annotation you have made, in one table. The same properties are what the cards read, so anything a query can show you can also sit beside the text.
 
-The note is the original and the property is a copy of it. **Editing the property directly has no lasting effect** — it is overwritten from the note the next time Linknote reads the file. To change the text, change the note. Turning off *Write the body property from the note* stops both the copying and the overwriting.
+The note is the original and the property is a copy of it. **Editing the property directly has no lasting effect** — it is overwritten from the note the next time Linknote reads the file. To change the text, change the note. Turning off *Keep the body property in step with the note* stops both the copying and the overwriting.
 
 ## Several people on one note
 
@@ -226,8 +227,11 @@ Linknote does nothing about conflicts. Two people editing one source note at the
 | Which notes to be told about | Notes I wrote | your own notes, or every note in the vault; your own linknotes are never announced either way |
 | Your names in note properties | empty | the names a note of yours signs itself with, which are often not the per-device Author; comma-separated for several. Empty means use Author |
 | Notes with no author are yours | on | counts an unsigned note as yours for the chat message. Turn it off in a vault several people write into |
-| Post to a chat channel | off | one line to a webhook when someone else annotates a note of yours; the only thing this plugin ever sends |
+| Post to a chat channel | off | one line to a webhook when someone else annotates a note of yours; the only thing this plugin ever sends. **Desktop only** — a phone posts nothing |
 | Webhook address | empty | HTTPS only. A WeCom group robot address, or anything accepting the same JSON. Kept on the device rather than in the vault, so each person in a shared vault has their own |
+| Mention everyone in the thread | off | @s the whole thread instead of naming people, so no directory is needed |
+| Who to @ in the message | empty | a directory of `note name=chat account`. It is a **setting, so it lives in the vault and syncs to everyone sharing it** — which is what makes it usable by the team, and also means colleagues' account names and phone numbers are in there. Ignored while *Mention everyone* is on |
+| Send a test message | — | posts one line now, so you see it arrive before relying on it |
 
 ## How the anchoring works
 
@@ -268,110 +272,4 @@ node test/integration.js  # note creation end to end, against a fake vault
 
 ## Changelog
 
-The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
-
-### 0.25.2
-
-- Dates in plain language in the composer, using Natural Language Dates when it is installed. Linknote holds no date settings of its own — the format, the wikilink and the trigger are read from that plugin.
-
-### 0.24.2
-
-- **Cycle the marks**: a command and a three-way setting for how much Linknote draws into a note — everything, markers but no cards, or nothing at all. The button on a selection stays throughout, so a linknote can still be written into a note that shows no sign of them. Nothing is written to any note at any level.
-
-### 0.23.2
-
-- The printed card fills the margin reserved for it, instead of leaving a blank strip down the page. A card is also, at last, exactly as wide as the width you set.
-
-### 0.23.1
-
-- Cards keep the margin when exported to PDF, in a gutter measured as a share of the page. Stowed cards are not printed.
-
-### 0.23.0
-
-- Cards print properly: exporting to PDF piled them on top of one another. Printing now drops the measured offsets, which a different page size invalidates.
-
-### 0.22.8
-
-- **Mention everyone in the thread**: one switch that @s the thread, for the usual case where the address is your own and there is nobody to single out. The directory is for a shared group, and needs the 帐号 (UserID) the chat service issued — a wrong one is accepted in silence.
-
-### 0.22.7
-
-- Whoever wrote the annotated note is @-mentioned, from a `name=account` directory you supply.
-
-### 0.22.6
-
-- The chat message names whose notes were annotated as well as who annotated them — one line per pair, still with no note name and no text.
-
-### 0.22.5
-
-- **Which notes to be told about**: your own, or every note in the vault.
-
-### 0.22.3 / 0.22.4
-
-- Notes with no author property count as yours, under a setting of that name (on by default; turn it off in a vault several people write into).
-- **Your names in note properties** takes as many names as you answer to, separated by commas.
-
-### 0.22.2
-
-- A chat message is skipped when the linknote's author is one of the source note's own authors — an author annotating their own note is not news, whichever device it came from.
-
-### 0.22.1
-
-- The chat switch no longer records itself as off when turned on before the address is pasted, and the settings screen says whether it is actually ready.
-
-### 0.22.0
-
-- Optional chat notifications: when someone else annotates a note you wrote, one line can be posted to a WeCom group robot webhook. Counts and authors only. Off by default, desktop only.
-
-### 0.21.2
-
-- Acknowledging a linknote in the sidebar now clears its card in the note as well, in every open pane.
-
-### 0.21.1
-
-- The sidebar list can show only what is unread: *Unread only* joins the orders, and works in either scope.
-
-### 0.21.0
-
-- A linknote counts as read when you say so — the tick on its card or row, or opening it as a note — rather than merely by being drawn on screen. The old behaviour is a setting.
-- An unread card carries the accent colour and a tick to clear it.
-- The ribbon badge is larger, the icon takes the accent while anything is waiting, and on desktop the count also sits in the status bar.
-
-### 0.20.2
-
-- The ribbon icon carries the unread count, and notices stand for twenty seconds rather than eight.
-- A row in the inbox is headed by the marker of whoever wrote it, once the unread dot has gone.
-- The search box in the sidebar is usable again; the whole-vault list is named **Linknote inbox**.
-- Editing someone else's linknote yourself no longer announces it back to you.
-
-### 0.20.1
-
-- A card that fell inline in a narrow pane comes back to the margin when the pane is made wide again — by any means, not only a window resize.
-- A card whose pane could not be measured is retried rather than left inline for good.
-- The sidebar list redraws once per burst rather than once per cause.
-
-### 0.20.0
-
-- **Linknotes from other people announce themselves.** One notice per burst, grouped by author — *3 linknotes updated (Yamada: 2 new · Sato: 1 edited)* — covering what sync delivers while the vault is open and, on start-up, what came in while it was closed. Your own linknotes are never news, and nothing is announced twice. Clicking the notice opens the vault-wide list.
-- **The sidebar list has a scope: this note, or the whole vault.** The vault-wide list is the inbox: recently changed first, unread rows dotted, with a **Mark all read** button. Read marks are kept per device, in the app's local storage, and never travel over sync.
-- New setting: **Notify when linknotes change** (on). It quiets the notices; the dots stay.
-
-### 0.19.2
-
-- The diagnostic line 0.19.1 wrote to the developer console when a passage could not be found is gone; it was there to find the cause and the cause is fixed. No other change.
-
-### 0.19.1
-
-- Pressing the passage on a card attached to a task highlights it. The card can be left hanging off a copy of the line that another plugin has since replaced — the Tasks plugin re-renders task lines — and nothing can be found inside a block that is no longer in the page. Rather than reason about which copy is which, the card now falls back to exactly what the sidebar does, which was working all along: find the marker again in the note as it stands, wait for the view if it is still drawing, and say so only at the end.
-
-### 0.19.0
-
-- **The sidebar list has a search box and an order.** Type to narrow the list — every word has to appear in the author, the note, the passage or the file name, so two words narrow rather than widen — and choose between the order in the note (the default), newest first, recently changed, and by author. The order is remembered; what you typed is not. Rows with nothing to separate them keep the order they have in the note, so the list never shuffles under you.
-- **Card text size goes up to 200%.** It stopped at 130%, which is not enough on a large display.
-- The floating **Linknote** button holds the theme's accent colour even under a theme that styles every button, and shows a focus ring when reached from the keyboard.
-- Pressing the passage on a card attached to a task now highlights it. Where another plugin re-renders a line — the Tasks plugin does — the card could be left hanging off a copy that is no longer in the page; the marker is now looked up afresh in the pane, the way the sidebar does it.
-
-### 0.18.3
-
-- The floating **Linknote** button no longer comes back after Save. Pressing the button raises a mouseup, and the check that mouseup schedules ran once the composer had already gone — finding the selection still standing, it drew the button again, where it sat until something was clicked. The selection is now let go once the linknote has been written, and the button stays away for a moment after the composer closes.
-
+Every release is in [CHANGELOG.md](CHANGELOG.md), newest first — what changed, and what the change was for.
