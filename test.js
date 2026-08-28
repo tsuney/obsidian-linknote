@@ -382,6 +382,71 @@ eq('the caret must be inside the tag', m.tagQueryAt('#one two', 8), null);
 eq('a leading hash on the pick is not doubled',
   m.applyTagPick('see #pro', m.tagQueryAt('see #pro', 8), '#project').text, 'see #project ');
 
+console.log('\nthe date being typed at the caret');
+{
+  const { dateQueryAt, applyDatePick, datePicks } = m;
+
+  eq('nothing outside a date', dateQueryAt('plain text', 5), null);
+  {
+    const r = dateQueryAt('due @next fri', 13);
+    // Unlike a tag, the phrase keeps its spaces: "next friday" is one query.
+    eq('the query is everything after the trigger', r.query, 'next fri');
+    eq('the range starts at the trigger', r.start, 4);
+    eq('and ends at the caret', r.end, 13);
+  }
+  eq('a bare trigger gives an empty query', dateQueryAt('due @', 5).query, '');
+  eq('a trigger at the start counts', dateQueryAt('@today', 6).query, 'today');
+  // The case that matters for anyone typing an address: it is not a date, and
+  // because nothing parses, nothing is offered either.
+  eq('a trigger mid-word is not a date', dateQueryAt('a@b.com', 7), null);
+  eq('a second trigger ends the first', dateQueryAt('@one @two', 9).query, 'two');
+  eq('a line break ends it', dateQueryAt('@today\nnext', 11), null);
+
+  // The trigger is that plugin's setting, so it is not assumed to be '@' and
+  // not assumed to be one character or free of regex punctuation.
+  eq('a trigger of two characters', dateQueryAt('due //next fri', 14, '//').query, 'next fri');
+  eq('and the range covers both', dateQueryAt('due //next fri', 14, '//').start, 4);
+  eq('a trigger that is regex punctuation', dateQueryAt('due ?tomorrow', 13, '?').query, 'tomorrow');
+
+  const parse = (text) => {
+    const known = { today: '2026-08-25-Tuesday', tomorrow: '2026-08-26-Wednesday',
+                    yesterday: '2026-08-24-Monday', 'next monday': '2026-08-31-Monday',
+                    'next week': '2026-09-01-Tuesday', 'next fri': '2026-08-28-Friday' };
+    return known[text] ? { formattedString: known[text] } : null;
+  };
+
+  {
+    const picks = datePicks('next fri', parse);
+    eq('one phrase, one date', picks.length, 1);
+    eq('the date is what that plugin formatted', picks[0].date, '2026-08-28-Friday');
+    eq('and the phrase is kept, to show what was understood', picks[0].phrase, 'next fri');
+  }
+  eq('a phrase that resolves to nothing is dropped', datePicks('lunch', parse).length, 0);
+  eq('nothing typed yet offers the openers', datePicks('', parse).length, 5);
+  eq('the first opener is today', datePicks('', parse)[0].date, '2026-08-25-Tuesday');
+  eq('without that plugin there is nothing to offer', datePicks('today', null).length, 0);
+  // Its parseDate throwing must not take the composer down with it.
+  eq('a parser that throws offers nothing', datePicks('today', () => { throw new Error('x'); }).length, 0);
+
+  {
+    const range = dateQueryAt('due @next fri', 13);
+    const r = applyDatePick('due @next fri', range, '2026-08-28-Friday', true);
+    eq('the date replaces the phrase', r.text, 'due [[2026-08-28-Friday]] ');
+    eq('the caret lands after it', r.cursor, 26);
+  }
+  {
+    const range = dateQueryAt('due @next fri', 13);
+    // Whether to wrap is that plugin's Add dates as link, read not re-asked.
+    eq('plain when that is what was asked for',
+      applyDatePick('due @next fri', range, '2026-08-28-Friday', false).text,
+      'due 2026-08-28-Friday ');
+  }
+  {
+    const range = dateQueryAt('due @', 5);
+    eq('an empty date changes nothing', applyDatePick('due @', range, '', true).text, 'due @');
+  }
+}
+
 console.log('\ncollecting the vault tags');
 eq('inline and property tags are merged and sorted',
   m.collectTags([

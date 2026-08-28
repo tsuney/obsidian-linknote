@@ -1,5 +1,12 @@
 # Changelog
 
+### 0.25.0
+
+- **A date in plain language, if you have Natural Language Dates.** Type `@next friday` in the composer, or press the new **Date** button, and pick the date it resolves to. The suggestion shows both the phrase and the date, so what was understood is visible before it is committed.
+- **Linknote holds no date settings.** The format, whether a date is wrapped in a wikilink, and which character opens the suggestion are all read from that plugin, where they have already been answered. Asking again here would put two answers to one question in one vault, and the two would drift. Turning off its own autosuggest turns off ours as you type, and leaves the button.
+- The **Date button appears only when that plugin is installed and enabled**; a button that never does anything is worse than none. This is the first thing Linknote borrows from another plugin, so it is borrowed carefully: only `parseDate` is documented as an API, and the settings read off the instance are each checked for the type they should be and fall back to that plugin's own defaults. If it renames one, dates keep working in the shape most people have.
+- A phrase that resolves to nothing is not offered, which is what makes an email address typed mid-sentence stay an email address.
+
 ### 0.24.2
 
 - **The button on a selection stays, whatever else is hidden.** *Nothing at all* took it away with everything else, which left the command palette as the only way to write a linknote — a worse tool for it than the button, and not one every reader knows is there. The button belongs to the act of writing rather than to the note, so it is not a mark the note carries and does not go with them. What the note itself shows is unchanged: nothing.

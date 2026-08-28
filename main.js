@@ -742,6 +742,106 @@ function applyTagPick(text, range, tag) {
   };
 }
 
+/**
+ * Everything about dates is Natural Language Dates' answer, not ours.
+ *
+ * That plugin already asks the reader what format a date takes, whether one
+ * should be wrapped in a wikilink, and what character opens the suggestion —
+ * and they have already answered. Asking again in our own settings would put
+ * two answers to one question in one vault, and the two would drift.
+ *
+ * Only `parseDate` is documented as an API; the settings are read straight off
+ * the plugin instance, which is not. So every field is checked for the type it
+ * should be and falls back to that plugin's own default. If it renames one,
+ * dates keep working in the shape most people have.
+ */
+function nlDates(app) {
+  try {
+    const plugin = app && app.plugins && app.plugins.getPlugin('nldates-obsidian');
+    if (!plugin || typeof plugin.parseDate !== 'function') return null;
+    const s = plugin.settings || {};
+    return {
+      parse: (text) => plugin.parseDate(text),
+      trigger: typeof s.autocompleteTriggerPhrase === 'string' && s.autocompleteTriggerPhrase
+        ? s.autocompleteTriggerPhrase
+        : '@',
+      asLink: typeof s.autosuggestToggleLink === 'boolean' ? s.autosuggestToggleLink : true,
+      onTyping: typeof s.isAutosuggestEnabled === 'boolean' ? s.isAutosuggestEnabled : true,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+/** For a trigger that is used inside a regular expression. */
+function escapeRe(text) {
+  return String(text == null ? '' : text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The `@…` being typed at the caret, or null. The date twin of tagQueryAt.
+ *
+ * A date phrase has spaces in it — "next friday" — so unlike a tag this runs
+ * to the caret rather than to the first space, and only a line break or a
+ * second trigger ends it. The cost is that an address typed mid-sentence looks
+ * like a query until the space, which is harmless: nothing parses, so nothing
+ * is offered, and the @ stays the character it was.
+ */
+function dateQueryAt(text, caret, trigger) {
+  const value = String(text == null ? '' : text);
+  const mark = trigger || '@';
+  const at = Math.max(0, Math.min(Number(caret) || 0, value.length));
+  const before = value.slice(0, at);
+  const re = new RegExp('(^|\\s)' + escapeRe(mark) + '([^\\n' + escapeRe(mark[0]) + ']*)$');
+  const hit = before.match(re);
+  if (!hit) return null;
+  return { start: at - hit[2].length - mark.length, end: at, query: hit[2] };
+}
+
+/** Puts a picked date into the text, replacing the `@…` that asked for it. */
+function applyDatePick(text, range, date, asLink) {
+  const value = String(text == null ? '' : text);
+  const shown = String(date == null ? '' : date).trim();
+  if (!shown) return { text: value, cursor: range.end };
+  const inserted = (asLink ? '[[' + shown + ']]' : shown) + ' ';
+  return {
+    text: value.slice(0, range.start) + inserted + value.slice(range.end),
+    cursor: range.start + inserted.length,
+  };
+}
+
+/** The phrases offered before anything has been typed after the @. */
+const DATE_OPENERS = ['today', 'tomorrow', 'yesterday', 'next monday', 'next week'];
+
+/**
+ * What to offer for an `@…` query: `[{ phrase, date }]`.
+ *
+ * `parse` is passed in rather than reached for, so this can be tested without
+ * Obsidian and without the plugin it borrows: the only thing being decided
+ * here is which phrases to try and what to do when one does not resolve.
+ *
+ * A phrase that resolves to nothing is dropped rather than shown greyed out.
+ * An empty list closes the popup, which leaves the @ as an ordinary character
+ * — which is what someone typing an address wants.
+ */
+function datePicks(query, parse) {
+  if (typeof parse !== 'function') return [];
+  const asked = String(query == null ? '' : query).trim();
+  const phrases = asked ? [asked] : DATE_OPENERS;
+  const out = [];
+  for (const phrase of phrases) {
+    let date = '';
+    try {
+      const got = parse(phrase);
+      date = got && got.formattedString ? String(got.formattedString).trim() : '';
+    } catch (e) {
+      date = '';
+    }
+    if (date) out.push({ phrase, date });
+  }
+  return out;
+}
+
 /** Every tag in the vault, from file caches. Sorted, without the leading #. */
 function collectTags(caches) {
   const seen = new Set();
@@ -5175,9 +5275,16 @@ class LinknoteModal extends Modal {
     const suggest = contentEl.createDiv({ cls: 'lkn-suggest' });
     suggest.hide();
 
+    // The dates half of this is Natural Language Dates' if it is installed,
+    // and simply absent if it is not.
+    const nld = nlDates(this.app);
+
     let matches = [];
     let active = 0;
     let range = null;
+    // Which of the two is open. One popup, one caret, one list — two would be
+    // two answers to "what is being typed here".
+    let kind = 'tag';
 
     const closeSuggest = () => {
       suggest.hide();
@@ -5185,38 +5292,59 @@ class LinknoteModal extends Modal {
       range = null;
     };
 
+    const labelOf = (m) => (kind === 'date' ? m.phrase + ' — ' + m.date : '#' + m);
+
     const drawSuggest = () => {
       suggest.empty();
-      matches.forEach((tag, i) => {
+      matches.forEach((m, i) => {
         const row = suggest.createDiv({
           cls: 'lkn-suggest-item' + (i === active ? ' is-active' : ''),
-          text: '#' + tag,
+          text: labelOf(m),
         });
         // mousedown, not click: the textarea must not lose the caret first.
         row.addEventListener('mousedown', (evt) => {
           evt.preventDefault();
-          pick(tag);
+          pick(m);
         });
       });
       if (matches.length) suggest.show();
       else suggest.hide();
     };
 
-    const pick = (tag) => {
-      if (!range || !tag) return;
-      const next = applyTagPick(bodyInput.value, range, tag);
+    const pick = (m) => {
+      if (!range || !m) return;
+      const next =
+        kind === 'date'
+          ? applyDatePick(bodyInput.value, range, m.date, nld ? nld.asLink : true)
+          : applyTagPick(bodyInput.value, range, m);
       bodyInput.value = next.text;
       bodyInput.setSelectionRange(next.cursor, next.cursor);
       closeSuggest();
       bodyInput.focus();
     };
 
-    const refreshSuggest = () => {
-      range = tagQueryAt(bodyInput.value, bodyInput.selectionStart);
-      if (!range) return closeSuggest();
-      matches = filterTags(this.plugin.vaultTags(), range.query);
-      active = 0;
-      drawSuggest();
+    // `typed` is false when a button asked, which is how the Date button still
+    // works for someone who has turned that plugin's own autosuggest off.
+    const refreshSuggest = (typed) => {
+      const tagRange = tagQueryAt(bodyInput.value, bodyInput.selectionStart);
+      if (tagRange) {
+        kind = 'tag';
+        range = tagRange;
+        matches = filterTags(this.plugin.vaultTags(), range.query);
+        active = 0;
+        return drawSuggest();
+      }
+      if (nld && (nld.onTyping || typed === false)) {
+        const dateRange = dateQueryAt(bodyInput.value, bodyInput.selectionStart, nld.trigger);
+        if (dateRange) {
+          kind = 'date';
+          range = dateRange;
+          matches = datePicks(range.query, nld.parse);
+          active = 0;
+          return drawSuggest();
+        }
+      }
+      closeSuggest();
     };
 
     const insertAtCaret = (text) => {
@@ -5244,11 +5372,23 @@ class LinknoteModal extends Modal {
     tagBtn.addEventListener('click', (evt) => {
       evt.preventDefault();
       insertAtCaret('#');
-      refreshSuggest();
+      refreshSuggest(false);
     });
 
-    bodyInput.addEventListener('input', refreshSuggest);
-    bodyInput.addEventListener('click', refreshSuggest);
+    // Only where there is something to ask. Without that plugin there is no
+    // date to offer, and a button that never does anything is worse than none.
+    if (nld) {
+      const dateBtn = tools.createEl('button', { cls: 'lkn-tool', text: 'Date' });
+      dateBtn.setAttribute('title', 'Insert a date in plain language');
+      dateBtn.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        insertAtCaret(nld.trigger);
+        refreshSuggest(false);
+      });
+    }
+
+    bodyInput.addEventListener('input', () => refreshSuggest(true));
+    bodyInput.addEventListener('click', () => refreshSuggest(true));
     bodyInput.addEventListener('blur', () => window.setTimeout(closeSuggest, 120));
     bodyInput.addEventListener('keydown', (evt) => {
       if (!matches.length) return;
@@ -6367,6 +6507,9 @@ module.exports.linkDisplayText = linkDisplayText;
 module.exports.toggleTaskLine = toggleTaskLine;
 module.exports.tagQueryAt = tagQueryAt;
 module.exports.applyTagPick = applyTagPick;
+module.exports.dateQueryAt = dateQueryAt;
+module.exports.applyDatePick = applyDatePick;
+module.exports.datePicks = datePicks;
 module.exports.collectTags = collectTags;
 module.exports.filterTags = filterTags;
 module.exports.CALLOUT_NOTE_TEMPLATE = CALLOUT_NOTE_TEMPLATE;

@@ -63,7 +63,9 @@ The command **Create linknote from selection** is registered, so you can bind a 
 
 In the composer, `Ctrl/Cmd + Enter` saves and `Esc` cancels.
 
-Two buttons sit above the note field. **Task** turns the line the caret is on into `- [ ] …`, and pressing it again takes the marker off. **Tag** starts a tag; typing `#` anywhere does the same. Either way a list of the tags already in your vault appears, arrow keys move through it and Enter picks one. That list is built from Obsidian's public file caches, not from an undocumented API.
+Buttons sit above the note field. **Task** turns the line the caret is on into `- [ ] …`, and pressing it again takes the marker off. **Tag** starts a tag; typing `#` anywhere does the same. Either way a list of the tags already in your vault appears, arrow keys move through it and Enter picks one. That list is built from Obsidian's public file caches, not from an undocumented API.
+
+A third button, **Date**, appears if you have [Natural Language Dates](https://github.com/argenos/nldates-obsidian) installed. Type `@next friday` — or press the button — and the date it resolves to is offered, phrase and date shown together so you can see what was understood. Linknote holds no date settings of its own: the format, whether the date is wrapped in a wikilink, and which character opens the suggestion are all read from that plugin, where you have already answered them.
 
 ## Templates
 
@@ -267,6 +269,10 @@ node test/integration.js  # note creation end to end, against a fake vault
 ## Changelog
 
 The last few releases are below; the full history is in [CHANGELOG.md](CHANGELOG.md).
+
+### 0.25.0
+
+- Dates in plain language in the composer, using Natural Language Dates when it is installed. Linknote holds no date settings of its own — the format, the wikilink and the trigger are read from that plugin.
 
 ### 0.24.2
 
