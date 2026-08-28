@@ -3324,7 +3324,13 @@ class LinknotePlugin extends Plugin {
   async setNoteMarks(level) {
     this.settings.noteMarks = level === 'markers' || level === 'none' ? level : 'all';
     await this.saveSettings();
-    this.applyCardStyle();
+    // settleCards, not applyCardStyle alone. A card that was not drawn was
+    // never measured either, and the placement is decided by measuring: the
+    // pane's width against the card's, the height of the stack above. Coming
+    // back from a level that hid them, the numbers those decisions rest on
+    // were all taken while every box was zero by zero — so the gutter stood
+    // empty until something else happened to re-render the note.
+    this.settleCards();
     new Notice(SAID[this.settings.noteMarks]);
   }
 

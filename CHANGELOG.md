@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.25.3
+
+- **Cards come back when the marks do.** Returning from *Nothing at all* to *Everything* left the gutter reserved and empty: a card that is not drawn is not measured either, and where a card goes is decided by measuring — the pane's width against the card's, the height of the stack above it. Every number those decisions rested on had been taken while each box was nothing by nothing. Changing the level now re-draws, re-places and re-sizes the cards, as turning them on in settings already did.
+- Opening another note and coming back was the workaround, because that is what forced a re-render.
+
 ### 0.25.2
 
 - **The Enter that confirms a Japanese conversion is no longer taken as a pick.** Typing `@明日` produced `[[2026-08-28-Friday]] 明日明日`: the suggestion list was open on *today*, the input method's confirming Enter arrived as an ordinary keydown, the list acted on it, and then the composition committed its own text anyway. Nothing is offered or picked while a composition is in progress — the keys and the half-formed text belong to the input method until it has finished.
